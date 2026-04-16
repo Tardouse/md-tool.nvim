@@ -134,7 +134,7 @@ The list module is intentionally conservative:
 
 - It only applies in `markdown` buffers.
 - It skips fenced code blocks, frontmatter, and probable table rows.
-- It only continues lists when pressing `<CR>` at the end of a list line.
+- It continues lists when pressing `<CR>` at the end of a list line or `o` in normal mode on an existing list item.
 - Empty items like `- ` or `3. ` exit the list instead of generating another marker when `exit_on_empty = true`.
 - Task list continuation can either preserve checkbox state or reset checked items back to unchecked.
 
