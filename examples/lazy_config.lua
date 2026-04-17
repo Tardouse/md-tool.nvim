@@ -330,12 +330,6 @@ return {
 			},
 
 			toc = {
-				-- [CN] 是否默认启用 TOC 模块。
-				-- [CN] 可选值: `true` / `false`。
-				-- [EN] Enable the TOC module by default.
-				-- [EN] Choices: `true` / `false`.
-				enabled = true,
-
 				-- [CN] 保存文件时是否自动更新现有 TOC。
 				-- [CN] 可选值: `true` / `false`。
 				-- [EN] Auto-update the TOC block on save.

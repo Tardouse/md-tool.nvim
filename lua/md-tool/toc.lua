@@ -1,5 +1,4 @@
 local config = require("md-tool.config")
-local state = require("md-tool.state")
 local utils = require("md-tool.utils")
 
 local M = {}
@@ -316,7 +315,7 @@ function M.attach(bufnr)
   end
 
   local cfg = config.get().toc
-  if not state.is_module_enabled("toc", bufnr) or not cfg.auto_update_on_save then
+  if not cfg.auto_update_on_save then
     M.detach(bufnr)
     return
   end
@@ -326,9 +325,7 @@ function M.attach(bufnr)
     buffer = bufnr,
     group = group,
     callback = function()
-      if state.is_module_enabled("toc", bufnr) then
-        M.update(bufnr, { silent = true })
-      end
+      M.update(bufnr, { silent = true })
     end,
   })
 end

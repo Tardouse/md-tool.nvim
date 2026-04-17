@@ -144,7 +144,6 @@ require("md-tool").setup({
   },
 
   toc = {
-    enabled = true,
     auto_update_on_save = true,
     list_marker = "-",
     max_depth = 6,

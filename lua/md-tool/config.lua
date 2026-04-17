@@ -74,7 +74,6 @@ local defaults = {
     format_on_save = false,
   },
   toc = {
-    enabled = true,
     auto_update_on_save = true,
     list_marker = "-",
     max_depth = 6,
@@ -157,6 +156,15 @@ local function normalize_render(render_opts, raw_render)
   return render_opts
 end
 
+local function normalize_toc(toc_opts, raw_toc)
+  if raw_toc and raw_toc.enabled ~= nil and raw_toc.auto_update_on_save == nil then
+    toc_opts.auto_update_on_save = raw_toc.enabled
+  end
+
+  toc_opts.enabled = nil
+  return toc_opts
+end
+
 local function validate(opts)
   validate_boolean("render.enabled", opts.render.enabled)
   validate_boolean("render.hide_in_insert", opts.render.hide_in_insert)
@@ -210,7 +218,6 @@ local function validate(opts)
   validate_boolean("table.auto_align", opts.table.auto_align)
   validate_boolean("table.format_on_save", opts.table.format_on_save)
 
-  validate_boolean("toc.enabled", opts.toc.enabled)
   validate_boolean("toc.auto_update_on_save", opts.toc.auto_update_on_save)
   validate_string("toc.list_marker", opts.toc.list_marker)
   validate_positive_integer("toc.max_depth", opts.toc.max_depth)
@@ -242,6 +249,7 @@ end
 function M.setup(user_opts)
   local merged = vim.tbl_deep_extend("force", vim.deepcopy(defaults), user_opts or {})
   merged.render = normalize_render(merged.render, user_opts and user_opts.render or nil)
+  merged.toc = normalize_toc(merged.toc, user_opts and user_opts.toc or nil)
   validate(merged)
   options = merged
   return options
