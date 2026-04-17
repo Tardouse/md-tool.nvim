@@ -24,18 +24,106 @@ local function parse_quote_prefix(text)
   return quote, rest
 end
 
+local function parse_list_line(line)
+  local indent, rest = (line or ""):match("^(%s*)(.*)$")
+  local quote, body = parse_quote_prefix(rest)
+
+  local task_marker, task_state, task_text = body:match("^([-*+])%s+%[([ xX%-])%]%s*(.-)%s*$")
+  if task_marker then
+    return {
+      indent = indent,
+      quote = quote,
+      body = body,
+      kind = "task",
+      marker = task_marker,
+      task_state = task_state,
+      text = task_text,
+    }
+  end
+
+  local ordered_number, ordered_delim, ordered_text = body:match("^(%d+)([.)])%s*(.-)%s*$")
+  if ordered_number then
+    return {
+      indent = indent,
+      quote = quote,
+      body = body,
+      kind = "ordered",
+      number = tonumber(ordered_number),
+      delim = ordered_delim,
+      text = ordered_text,
+    }
+  end
+
+  local bullet_marker, bullet_text = body:match("^([-*+])%s*(.-)%s*$")
+  if bullet_marker then
+    return {
+      indent = indent,
+      quote = quote,
+      body = body,
+      kind = "bullet",
+      marker = bullet_marker,
+      text = bullet_text,
+    }
+  end
+end
+
 local function exit_list_item(bufnr, row, replacement)
+  local winid = vim.api.nvim_get_current_win()
   vim.schedule(function()
     if not vim.api.nvim_buf_is_valid(bufnr) then
       return
     end
-    vim.api.nvim_buf_set_lines(bufnr, row - 1, row, false, { replacement })
+
+    local end_row = math.min(row + 1, vim.api.nvim_buf_line_count(bufnr))
+    vim.api.nvim_buf_set_lines(bufnr, row - 1, end_row, false, { replacement })
+
+    if vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == bufnr then
+      pcall(vim.api.nvim_win_set_cursor, winid, { row, #replacement })
+    end
   end)
 end
 
 local function same_ordered_prefix(line, indent, quote)
   local prefix = vim.pesc(indent .. quote)
   return line:match("^" .. prefix .. "%d+[.)]%s+")
+end
+
+local function newline_preserves_indent(bufnr)
+  return vim.bo[bufnr].autoindent
+    or vim.bo[bufnr].smartindent
+    or vim.bo[bufnr].cindent
+    or vim.bo[bufnr].indentexpr ~= ""
+end
+
+local function action_continuation(action)
+  if not action then
+    return nil
+  end
+
+  if action.kind == "repeat" then
+    return action.quote .. action.continuation
+  end
+
+  if action.kind == "ordered" then
+    return action.quote .. action.number .. action.delim .. " "
+  end
+end
+
+local function action_insert_text(action, bufnr)
+  local continuation = action_continuation(action)
+  if not continuation then
+    return nil
+  end
+
+  if newline_preserves_indent(bufnr) then
+    return continuation
+  end
+
+  return action.indent .. continuation
+end
+
+local function expr_insert(text)
+  return "<C-r>=" .. vim.fn.string(text) .. "<CR>"
 end
 
 local function list_action(bufnr, row, line)
@@ -47,74 +135,78 @@ local function list_action(bufnr, row, line)
     return nil
   end
 
-  local indent, rest = line:match("^(%s*)(.*)$")
-  local quote, body = parse_quote_prefix(rest)
-  local cfg = config.get().list
-
-  if quote ~= "" and not cfg.continue_in_quote then
+  local parsed = parse_list_line(line)
+  if not parsed then
     return nil
   end
 
-  local task_marker, task_state, task_text = body:match("^([-*+])%s+%[([ xX])%]%s*(.-)%s*$")
-  if task_marker then
+  local cfg = config.get().list
+
+  if parsed.quote ~= "" and not cfg.continue_in_quote then
+    return nil
+  end
+
+  if parsed.kind == "task" then
     if not cfg.checklist then
       return nil
     end
-    if cfg.exit_on_empty and vim.trim(task_text) == "" then
+    if cfg.exit_on_empty and vim.trim(parsed.text) == "" then
       return {
         kind = "exit",
-        replacement = indent .. quote,
+        replacement = parsed.indent .. parsed.quote,
       }
     end
 
-    local next_state = cfg.checked_to_unchecked and " " or task_state
+    local next_state = cfg.checked_to_unchecked and " " or parsed.task_state
     return {
       kind = "repeat",
-      prefix = indent .. quote .. task_marker .. " [" .. next_state .. "] ",
+      indent = parsed.indent,
+      quote = parsed.quote,
+      continuation = parsed.marker .. " [" .. next_state .. "] ",
     }
   end
 
-  local ordered_number, ordered_delim, ordered_text = body:match("^(%d+)([.)])%s*(.-)%s*$")
-  if ordered_number then
+  if parsed.kind == "ordered" then
     if not cfg.ordered then
       return nil
     end
-    if cfg.exit_on_empty and vim.trim(ordered_text) == "" then
+    if cfg.exit_on_empty and vim.trim(parsed.text) == "" then
       return {
         kind = "exit",
-        replacement = indent .. quote,
+        replacement = parsed.indent .. parsed.quote,
       }
     end
 
-    local next_number = tonumber(ordered_number)
+    local next_number = parsed.number
     if cfg.renumber_on_continue then
       next_number = next_number + 1
     end
     return {
       kind = "ordered",
-      indent = indent,
-      quote = quote,
+      indent = parsed.indent,
+      quote = parsed.quote,
       number = next_number,
-      delim = ordered_delim,
+      delim = parsed.delim,
       renumber = cfg.renumber_on_continue,
     }
   end
 
-  local bullet_marker, bullet_text = body:match("^([-*+])%s*(.-)%s*$")
-  if bullet_marker then
+  if parsed.kind == "bullet" then
     if not cfg.unordered then
       return nil
     end
-    if cfg.exit_on_empty and vim.trim(bullet_text) == "" then
+    if cfg.exit_on_empty and vim.trim(parsed.text) == "" then
       return {
         kind = "exit",
-        replacement = indent .. quote,
+        replacement = parsed.indent .. parsed.quote,
       }
     end
 
     return {
       kind = "repeat",
-      prefix = indent .. quote .. bullet_marker .. " ",
+      indent = parsed.indent,
+      quote = parsed.quote,
+      continuation = parsed.marker .. " ",
     }
   end
 
@@ -127,7 +219,7 @@ local function action_prefix(action)
   end
 
   if action.kind == "repeat" then
-    return action.prefix
+    return action.indent .. action.quote .. action.continuation
   end
 
   if action.kind == "ordered" then
@@ -143,7 +235,7 @@ local function action_lines(action, count)
 
   if action.kind == "repeat" then
     for _ = 1, count do
-      lines[#lines + 1] = action.prefix
+      lines[#lines + 1] = action_prefix(action)
     end
     return lines
   end
@@ -188,12 +280,50 @@ function M.expr_cr()
     return "<CR>"
   end
 
-  local prefix = action_prefix(action)
-  if prefix then
-    return "<CR>" .. prefix
+  local insert_text = action_insert_text(action, bufnr)
+  if insert_text then
+    return "<CR>" .. expr_insert(insert_text)
   end
 
   return "<CR>"
+end
+
+function M.expr_tab()
+  local bufnr = vim.api.nvim_get_current_buf()
+  if not utils.is_markdown_buffer(bufnr) or not state.is_module_enabled("list", bufnr) then
+    return "<Tab>"
+  end
+
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  if utils.in_frontmatter(bufnr, row) or utils.in_fenced_code_block(bufnr, row) then
+    return "<Tab>"
+  end
+
+  local line = vim.api.nvim_get_current_line()
+  if line:find("|", 1, true) or not parse_list_line(line) then
+    return "<Tab>"
+  end
+
+  return "<Esc>>>A"
+end
+
+function M.expr_shift_tab()
+  local bufnr = vim.api.nvim_get_current_buf()
+  if not utils.is_markdown_buffer(bufnr) or not state.is_module_enabled("list", bufnr) then
+    return "<S-Tab>"
+  end
+
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  if utils.in_frontmatter(bufnr, row) or utils.in_fenced_code_block(bufnr, row) then
+    return "<S-Tab>"
+  end
+
+  local line = vim.api.nvim_get_current_line()
+  if line:find("|", 1, true) or not parse_list_line(line) then
+    return "<S-Tab>"
+  end
+
+  return "<Esc><<A"
 end
 
 function M.normal_o()
@@ -223,6 +353,8 @@ end
 
 function M.detach(bufnr)
   pcall(vim.keymap.del, "i", "<CR>", { buffer = bufnr })
+  pcall(vim.keymap.del, "i", "<Tab>", { buffer = bufnr })
+  pcall(vim.keymap.del, "i", "<S-Tab>", { buffer = bufnr })
   pcall(vim.keymap.del, "n", "o", { buffer = bufnr })
 end
 
@@ -242,6 +374,20 @@ function M.attach(bufnr)
     noremap = true,
     silent = true,
     desc = "md-tool smart list continuation",
+  })
+  vim.keymap.set("i", "<Tab>", M.expr_tab, {
+    buffer = bufnr,
+    expr = true,
+    noremap = true,
+    silent = true,
+    desc = "md-tool list indent",
+  })
+  vim.keymap.set("i", "<S-Tab>", M.expr_shift_tab, {
+    buffer = bufnr,
+    expr = true,
+    noremap = true,
+    silent = true,
+    desc = "md-tool list outdent",
   })
   vim.keymap.set("n", "o", M.normal_o, {
     buffer = bufnr,

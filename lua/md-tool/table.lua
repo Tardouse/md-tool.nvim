@@ -547,23 +547,24 @@ end
 
 function M.expr_tab()
   local bufnr = vim.api.nvim_get_current_buf()
+  local list = require("md-tool.list")
   if not utils.is_markdown_buffer(bufnr) or not state.is_module_enabled("table", bufnr) or not edit_mode_enabled(bufnr) then
-    return "<Tab>"
+    return list.expr_tab()
   end
 
   local row, col = unpack(vim.api.nvim_win_get_cursor(0))
   if utils.in_frontmatter(bufnr, row) or utils.in_fenced_code_block(bufnr, row) then
-    return "<Tab>"
+    return list.expr_tab()
   end
 
   local line = vim.api.nvim_get_current_line()
   if not is_partial_table_row(line) and not is_separator_row(line) then
-    return "<Tab>"
+    return list.expr_tab()
   end
 
   local current_cell = current_cell_index(line, col)
   if not current_cell then
-    return "<Tab>"
+    return list.expr_tab()
   end
 
   vim.schedule(function()

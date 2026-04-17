@@ -175,7 +175,19 @@ local function fence_info(line)
 end
 
 local function code_language(info)
-  return vim.trim((info or ""):match("^([%w%._%-%+]+)") or "")
+  info = vim.trim(info or "")
+  if info == "" then
+    return ""
+  end
+
+  local brace_lang = info:match("^{%s*%.([^%s}]+)")
+  if brace_lang and brace_lang ~= "" then
+    return brace_lang
+  end
+
+  local token = info:match("^(%S+)") or ""
+  token = token:gsub("^%.", "")
+  return token
 end
 
 local function separator_positions(line)
@@ -217,6 +229,18 @@ local function node_first_child_of_type(node, type_name)
       return child
     end
   end
+end
+
+local function list_nesting_level(node)
+  local level = 0
+  while node do
+    if node:type() == "list_item" then
+      level = level + 1
+    end
+    node = node:parent()
+  end
+
+  return math.max(level, 1)
 end
 
 local function split_row(line)
@@ -788,11 +812,11 @@ local function render_list_item(ctx, capture)
 
   local line = ctx.lines[row] or ""
   local indent, rest = line:match("^(%s*)(.*)$")
-  local quote_prefix, body, quote_level = parse_quote_prefix(rest)
+  local quote_prefix, body = parse_quote_prefix(rest)
   local start_col = #indent + #quote_prefix
-  local list_level = math.max(1, math.floor(#indent / 2) + quote_level + 1)
+  local list_level = list_nesting_level(capture.node)
 
-  local raw_task = body:match("^([-*+]%s+%[[ xX%-]%]%s+)") or body:match("^(%d+[.)]%s+%[[ xX%-]%]%s+)")
+  local raw_task = body:match("^([-*+]%s+%[[ xX%-]%]%s*)") or body:match("^(%d+[.)]%s+%[[ xX%-]%]%s*)")
   if raw_task and checkbox_cfg.enabled then
     local state_char = raw_task:match("%[([ xX%-])%]")
     local icon
@@ -808,7 +832,13 @@ local function render_list_item(ctx, capture)
       group = "MDTCheckboxUnchecked"
     end
 
-    ctx.decorator:overlay(row, start_col, { { fit_text(icon, #raw_task), group } })
+    ctx.decorator:conceal(row, start_col, start_col + #raw_task, {
+      priority = 232,
+    })
+    ctx.decorator:overlay(row, start_col, { { icon, group } }, {
+      pos = "inline",
+      priority = 233,
+    })
     return
   end
 

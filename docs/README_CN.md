@@ -185,6 +185,7 @@ cargo build --release
 - 只在 `markdown` buffer 生效
 - 跳过 fenced code block、frontmatter、疑似表格行
 - 在已有列表项上，行尾按 `<CR>` 或 normal 模式按 `o` 时才尝试续写，尽量减少干扰
+- insert 模式下可用 `<Tab>` / `<S-Tab>` 调整当前列表项层级
 - `- `、`3. ` 这种空项在 `exit_on_empty = true` 时会退出列表
 - task list 可配置为续写未勾选项，或者保留原始勾选状态
 
