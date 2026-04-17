@@ -2,13 +2,15 @@
 
 `md-tool.nvim` is a unified Markdown toolkit for Neovim. It combines preview, TOC management, table formatting, list continuation, and in-editor rendering under one command prefix and one configuration model.
 
-The current implementation focuses on a practical MVP:
+Current implementation highlights:
 
-- Render enhancement inside Neovim with extmarks and highlights
+- Treesitter-driven in-editor render with decorated headings, lists, quotes, callouts, tables, code fences, and thematic breaks
 - Browser preview with auto browser detection, manual browser commands, and echo-only mode
 - Current-table formatting with optional auto-align and format-on-save
 - TOC generation and update using fenced markers
 - Conservative smart `<CR>` continuation for Markdown lists
+
+Neovim `0.11.6+` is the supported baseline. The render module requires Treesitter parsers for `markdown` and `markdown_inline`.
 
 ## Installation
 
@@ -18,6 +20,7 @@ The current implementation focuses on a practical MVP:
 {
   "Tardouse/md-tool.nvim",
   ft = { "markdown" },
+  dependencies = { "nvim-treesitter/nvim-treesitter" },
   opts = {},
 }
 ```
@@ -67,6 +70,44 @@ Toggle and enable/disable commands operate on the current Markdown buffer so you
 require("md-tool").setup({
   render = {
     enabled = true,
+    modes = { "n", "v", "V", "\22", "c" },
+    debounce = 80,
+    max_file_size = 5.0,
+    visible_only = true,
+    hide_on_cursorline = false,
+    skip_concealed = true,
+    heading = {
+      enabled = true,
+    },
+    bullet = {
+      enabled = true,
+    },
+    checkbox = {
+      enabled = true,
+    },
+    quote = {
+      enabled = true,
+    },
+    callout = {
+      enabled = true,
+    },
+    code = {
+      enabled = true,
+      border = true,
+      language = true,
+      min_width = 24,
+    },
+    hr = {
+      enabled = true,
+    },
+    table = {
+      enabled = true,
+      border = true,
+      align = true,
+    },
+    link = {
+      enabled = true,
+    },
   },
 
   preview = {
@@ -128,6 +169,19 @@ preview = {
 
 The current preview implementation writes a styled HTML file under `stdpath("cache")/md-tool/preview/` and opens that file URI. The `host` and `port` options are kept for later upgrade paths to a real local preview server.
 
+## Render Behavior
+
+The render module keeps the original markdown text untouched and adds styling with Treesitter + extmarks. Rendering is restricted to the visible window range and refreshed with debounce instead of repainting the whole buffer on every edit.
+
+- Headings get a stronger line treatment with level-based icons and highlights.
+- Unordered list markers and task checkboxes are visually replaced with cleaner symbols.
+- Block quotes get left bars, and common GitHub/Obsidian callout markers such as `[!NOTE]` are rendered more clearly.
+- Code fences get a light block treatment with top and bottom borders and a language label when present.
+- Thematic breaks are redrawn as a full-width rule, and inline code / italic / bold / bold-italic spans conceal their markdown delimiters while keeping dedicated inline highlights.
+- Pipe tables get border styling and delimiter/alignment highlights.
+
+By default, render is active in normal/visual/command-like modes through `render.modes`, and the cursor line stays rendered as well. In normal mode, `render.skip_concealed = true` makes the cursor jump across concealed markdown delimiters instead of landing on hidden `*` or `` ` `` positions. Set `render.hide_on_cursorline = true` if you prefer the current line to fall back to raw Markdown while navigating. For compatibility, `render.hide_in_insert` is still accepted and mapped to the new mode model when `render.modes` is not set.
+
 ## List Behavior
 
 The list module is intentionally conservative:
@@ -163,18 +217,17 @@ TOC markers inside fenced code blocks are ignored.
 - If the cursor is outside all TOC blocks, the first TOC block is updated.
 - If no TOC block exists, a new one is inserted near the top of the document.
 
-## MVP Limitations And Future Improvements
+## Limitations And Future Improvements
 
 - Preview is file-based, not a live HTTP server yet.
-- Render enhancement is regex-driven and intentionally lightweight.
 - Table formatting is conservative and only targets obvious pipe tables.
 - List continuation avoids aggressive editing behaviors on purpose.
 - TOC anchors aim for GitHub-style slugs, but the implementation is still a simplified approximation.
+- Render currently focuses on core Markdown UI elements; footnotes, LaTeX, HTML comments, and frontmatter decoration are not covered yet.
 
 Likely next steps:
 
 - Upgrade preview into a real local server with live reload
-- Improve render quality with Treesitter when available
 - Expand table parsing for more Markdown edge cases
 - Add richer syntax-aware list handling inside complex block structures
 

@@ -70,6 +70,21 @@ function M.command_exists(command)
   return vim.fn.exepath(command) ~= ""
 end
 
+function M.file_size_mb(bufnr)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  if name == "" then
+    return 0
+  end
+
+  local stat = vim.uv.fs_stat(name)
+  if not stat or not stat.size then
+    return 0
+  end
+
+  return stat.size / (1024 * 1024)
+end
+
 function M.extract_executable(command)
   if type(command) ~= "string" then
     return nil

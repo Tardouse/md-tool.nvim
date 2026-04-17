@@ -12,6 +12,19 @@ local M = {
   bootstrapped = false,
 }
 
+local function ensure_supported_version()
+  local current = vim.version()
+  if vim.version.ge(current, { 0, 11, 6 }) then
+    return
+  end
+
+  error(("md-tool.nvim requires Neovim 0.11.6+, found %d.%d.%d."):format(
+    current.major or 0,
+    current.minor or 0,
+    current.patch or 0
+  ))
+end
+
 local function cleanup_modules(bufnr)
   render.detach(bufnr)
   list.detach(bufnr)
@@ -35,6 +48,8 @@ local function attach_modules(bufnr)
 end
 
 function M.bootstrap()
+  ensure_supported_version()
+
   if M.bootstrapped then
     return
   end
