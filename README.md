@@ -21,9 +21,12 @@ Neovim `0.11.6+` is the supported baseline. The render module requires Treesitte
   "Tardouse/md-tool.nvim",
   ft = { "markdown" },
   dependencies = { "nvim-treesitter/nvim-treesitter" },
+  build = "cargo build --release",
   opts = {},
 }
 ```
+
+Preview now depends on the bundled Rust binary. During local development, `md-tool.nvim` auto-detects `target/release/md-tool-preview`. For packaged installs, either keep the binary on `$PATH`, copy it to `bin/md-tool-preview` inside the plugin directory, or point `preview.binary` at the built executable.
 
 ## Commands
 
@@ -114,6 +117,10 @@ require("md-tool").setup({
     enabled = true,
     host = "127.0.0.1",
     port = 4399,
+    binary = "auto",
+    debounce = 150,
+    startup_timeout = 5000,
+    log_level = "info",
     auto_open = "auto",
     browser = "auto",
     echo_url = true,
@@ -148,14 +155,25 @@ require("md-tool").setup({
 })
 ```
 
-## Preview Browser Modes
+## Preview Server
 
-`md-tool.nvim` supports three preview modes:
+The preview module now runs a local Rust service:
+
+- Neovim pushes raw Markdown to `POST /update`
+- The Rust server renders Markdown to HTML with `pulldown-cmark`
+- Browser clients subscribe to `GET /ws` for real-time HTML updates
+- `GET /` serves a minimal embedded HTML client
+
+The server keeps only the latest document in memory, skips re-rendering when content is unchanged, and supports multiple browser clients concurrently. Preview updates are debounced on the Neovim side to avoid flooding the local server while typing.
+
+### Preview Browser Modes
+
+`md-tool.nvim` still supports three browser-open modes:
 
 1. `browser = "auto"`
    Uses platform-specific opener detection. On Linux it tries commands such as `xdg-open` or `gio open`; on macOS it uses `open`; on Windows it uses `cmd.exe /c start ""`.
 2. `browser = "echo"`
-   Does not launch a browser. The generated preview URL is echoed so it works cleanly over SSH and other remote sessions.
+   Does not launch a browser. The local preview URL is echoed so it works cleanly over SSH and other remote sessions.
 3. `browser = "..."` with a custom command
    You can provide a browser or opener command directly, for example:
 
@@ -167,7 +185,21 @@ preview = {
 
 `auto_open = "auto"` opens locally and falls back to echo-only behavior when an SSH session is detected. Even when auto-open is disabled, the preview URL is still shown.
 
-The current preview implementation writes a styled HTML file under `stdpath("cache")/md-tool/preview/` and opens that file URI. The `host` and `port` options are kept for later upgrade paths to a real local preview server.
+### Running The Preview Server
+
+Build the server once:
+
+```bash
+cargo build --release
+```
+
+Run it manually if you want to inspect logs outside Neovim:
+
+```bash
+./target/release/md-tool-preview --host 127.0.0.1 --port 4399 --log-level info
+```
+
+By default the plugin starts the server automatically on first preview use, probes `http://127.0.0.1:4399/health`, and opens `http://127.0.0.1:4399/`.
 
 ## Render Behavior
 
@@ -219,7 +251,7 @@ TOC markers inside fenced code blocks are ignored.
 
 ## Limitations And Future Improvements
 
-- Preview is file-based, not a live HTTP server yet.
+- Preview is a single live document session, not a multi-buffer or multi-tab router yet.
 - Table formatting is conservative and only targets obvious pipe tables.
 - List continuation avoids aggressive editing behaviors on purpose.
 - TOC anchors aim for GitHub-style slugs, but the implementation is still a simplified approximation.
@@ -227,7 +259,7 @@ TOC markers inside fenced code blocks are ignored.
 
 Likely next steps:
 
-- Upgrade preview into a real local server with live reload
+- Add per-buffer preview sessions instead of a single shared live document
 - Expand table parsing for more Markdown edge cases
 - Add richer syntax-aware list handling inside complex block structures
 

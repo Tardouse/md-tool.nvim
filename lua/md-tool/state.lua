@@ -10,8 +10,14 @@ local function ensure_buffer(bufnr)
       preview = {
         active = false,
         opened = false,
-        path = nil,
         url = nil,
+        inflight = false,
+        last_scroll_signature = nil,
+        pending = false,
+        pending_force = false,
+        pending_scroll = nil,
+        scroll_inflight = false,
+        last_sent_tick = -1,
       },
     }
   end

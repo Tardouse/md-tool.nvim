@@ -21,9 +21,12 @@
   "Tardouse/md-tool.nvim",
   ft = { "markdown" },
   dependencies = { "nvim-treesitter/nvim-treesitter" },
+  build = "cargo build --release",
   opts = {},
 }
 ```
+
+预览功能现在依赖仓库内的 Rust 二进制。开发环境下插件会自动探测 `target/release/md-tool-preview`；如果是打包安装，可以把二进制放到 `$PATH`，复制到插件目录下的 `bin/md-tool-preview`，或者显式设置 `preview.binary`。
 
 ## 基本配置
 
@@ -71,6 +74,13 @@ require("md-tool").setup({
     },
   },
   preview = {
+    enabled = true,
+    host = "127.0.0.1",
+    port = 4399,
+    binary = "auto",
+    debounce = 150,
+    startup_timeout = 5000,
+    log_level = "info",
     auto_open = "auto",
     browser = "auto",
     echo_url = true,
@@ -91,15 +101,40 @@ require("md-tool").setup({
 })
 ```
 
-## 预览模式
+## 预览服务
+
+预览模块现在是一个本地 Rust 服务：
+
+- Neovim 把原始 Markdown 发送到 `POST /update`
+- Rust 服务用 `pulldown-cmark` 渲染成 HTML
+- 浏览器通过 `GET /ws` 接收实时更新
+- `GET /` 返回内嵌的最小 HTML 客户端
+
+服务端只保存最新一份文档内容；如果 Markdown 没变化，就不会重复渲染或广播。Neovim 侧会对高频编辑事件做 debounce，避免输入时对本地服务造成无意义压力。
+
+### 浏览器打开模式
 
 - `browser = "auto"`：自动检测系统 opener
 - `browser = "echo"`：只回显预览地址，不启动浏览器
 - `browser = 'open -a "Google Chrome"'`：手动指定浏览器命令
 
-当前 MVP 会把 Markdown 渲染成 HTML，写到 `stdpath("cache")/md-tool/preview/` 下，再打开对应的 `file://` URL。`host` 和 `port` 已保留，方便后续升级成真正的本地预览服务。
-
 在 SSH / 远程环境里，`auto_open = "auto"` 会默认退化成只回显地址。
+
+### 手动运行预览服务
+
+先构建二进制：
+
+```bash
+cargo build --release
+```
+
+如果你想单独看服务日志，也可以自己启动：
+
+```bash
+./target/release/md-tool-preview --host 127.0.0.1 --port 4399 --log-level info
+```
+
+插件默认会在第一次启用预览时自动拉起服务，并探活 `http://127.0.0.1:4399/health`，浏览器访问地址为 `http://127.0.0.1:4399/`。
 
 ## 渲染行为
 
@@ -140,7 +175,7 @@ require("md-tool").setup({
 
 ## 当前限制
 
-- 预览还是文件式 MVP，不是实时 HTTP 服务
+- 预览目前是单文档实时会话，还没有做成多 buffer / 多路由预览
 - 表格格式化只处理明显的 pipe table
 - TOC anchor 是 GitHub 风格的近似实现
 - 渲染目前聚焦核心 Markdown UI 元素，还没有覆盖 footnote、LaTeX、HTML comment、frontmatter 装饰

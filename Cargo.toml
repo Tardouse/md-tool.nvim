@@ -1,0 +1,18 @@
+[package]
+name = "md-tool-preview"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Local Markdown preview server for md-tool.nvim"
+
+[dependencies]
+anyhow = "1.0"
+axum = { version = "0.8", features = ["ws"] }
+clap = { version = "4.5", features = ["derive"] }
+futures-util = "0.3"
+pulldown-cmark = "0.13"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "signal", "sync", "net"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

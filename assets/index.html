@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>md-tool preview</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f1e8;
+      --panel: rgba(255, 255, 255, 0.72);
+      --fg: #1f1a14;
+      --muted: #6f665a;
+      --line: rgba(92, 67, 39, 0.18);
+      --accent: #9b4d18;
+      --code: rgba(92, 67, 39, 0.08);
+      --shadow: 0 24px 70px rgba(46, 29, 10, 0.12);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #151311;
+        --panel: rgba(33, 28, 23, 0.88);
+        --fg: #eee5d6;
+        --muted: #b8ab99;
+        --line: rgba(255, 240, 214, 0.12);
+        --accent: #f0a36b;
+        --code: rgba(255, 240, 214, 0.08);
+        --shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--fg);
+      background:
+        radial-gradient(circle at top left, rgba(155, 77, 24, 0.18), transparent 30%),
+        radial-gradient(circle at top right, rgba(240, 163, 107, 0.1), transparent 28%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.25), transparent 30%),
+        var(--bg);
+      font: 16px/1.7 "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+    }
+
+    .shell {
+      width: min(960px, calc(100vw - 32px));
+      margin: 32px auto;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      overflow: hidden;
+      background: var(--panel);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(155, 77, 24, 0.08), transparent);
+    }
+
+    .title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font: 600 0.85rem/1.2 "IBM Plex Sans", "Segoe UI", sans-serif;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #c44;
+      box-shadow: 0 0 0 0 rgba(196, 68, 68, 0.45);
+      transition: background 120ms ease;
+    }
+
+    .status[data-state="online"] .status-dot {
+      background: #2c9a63;
+      animation: pulse 1.8s infinite;
+    }
+
+    .status[data-state="connecting"] .status-dot {
+      background: #d29a26;
+    }
+
+    .preview {
+      padding: min(5vw, 52px);
+    }
+
+    .preview > :first-child {
+      margin-top: 0;
+    }
+
+    .preview > :last-child {
+      margin-bottom: 0;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      line-height: 1.2;
+      color: var(--accent);
+      margin: 1.6em 0 0.55em;
+    }
+
+    p, ul, ol, pre, blockquote, table {
+      margin: 1em 0;
+    }
+
+    a {
+      color: var(--accent);
+    }
+
+    code {
+      padding: 0.15em 0.35em;
+      border-radius: 0.4em;
+      background: var(--code);
+      font: 0.92em/1.5 "Iosevka", "JetBrains Mono", monospace;
+    }
+
+    pre {
+      overflow-x: auto;
+      padding: 1rem 1.1rem;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--code);
+    }
+
+    pre code {
+      padding: 0;
+      background: transparent;
+    }
+
+    blockquote {
+      margin-inline: 0;
+      padding: 0.8rem 1rem;
+      border-left: 4px solid var(--accent);
+      background: var(--code);
+      color: var(--muted);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 0.65rem 0.8rem;
+      border: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      background: rgba(155, 77, 24, 0.08);
+    }
+
+    hr {
+      border: 0;
+      border-top: 1px solid var(--line);
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 14px;
+    }
+
+    .empty {
+      margin: 0;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(44, 154, 99, 0.45); }
+      70% { box-shadow: 0 0 0 10px rgba(44, 154, 99, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(44, 154, 99, 0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="toolbar">
+      <div class="title">md-tool preview</div>
+      <div id="status" class="status" data-state="connecting">
+        <span class="status-dot"></span>
+        <span id="status-text">Connecting</span>
+      </div>
+    </div>
+    <main id="preview" class="preview">
+      <p class="empty">Waiting for Markdown updates from Neovim.</p>
+    </main>
+  </div>
+
+  <script>
+    const preview = document.getElementById("preview");
+    const status = document.getElementById("status");
+    const statusText = document.getElementById("status-text");
+    const emptyHTML = '<p class="empty">Waiting for Markdown updates from Neovim.</p>';
+    const closedHTML = '<p class="empty">Preview closed.</p>';
+    let reconnectTimer = null;
+    let manualClose = false;
+    let scrollFrame = null;
+    let socket = null;
+    let lastScrollState = null;
+
+    function setStatus(state, text) {
+      status.dataset.state = state;
+      statusText.textContent = text;
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function applyRender(html) {
+      preview.innerHTML = html.trim() === "" ? emptyHTML : html;
+      queueScroll();
+    }
+
+    function syncScroll() {
+      scrollFrame = null;
+      if (!lastScrollState) {
+        return;
+      }
+
+      const lineCount = Number(lastScrollState.line_count) || 0;
+      const cursor = Number(lastScrollState.cursor) || 1;
+      const winline = Number(lastScrollState.winline) || 1;
+      const winheight = Number(lastScrollState.winheight) || 1;
+
+      const doc = document.documentElement;
+      const totalHeight = doc.scrollHeight;
+      const viewportHeight = window.innerHeight;
+      const maxScroll = Math.max(totalHeight - viewportHeight, 0);
+
+      if (lineCount <= 1 || cursor <= 1) {
+        window.scrollTo(0, 0);
+        return;
+      }
+
+      if (cursor >= lineCount) {
+        window.scrollTo(0, maxScroll);
+        return;
+      }
+
+      const lineRatio = clamp((cursor - 1) / (lineCount - 1), 0, 1);
+      const viewportRatio = clamp((winline - 1) / Math.max(winheight, 1), 0, 1);
+      const target = clamp(totalHeight * lineRatio - viewportHeight * viewportRatio, 0, maxScroll);
+      window.scrollTo(0, target);
+    }
+
+    function queueScroll() {
+      if (!lastScrollState) {
+        return;
+      }
+      if (scrollFrame !== null) {
+        cancelAnimationFrame(scrollFrame);
+      }
+      scrollFrame = requestAnimationFrame(syncScroll);
+    }
+
+    function closePreviewWindow() {
+      manualClose = true;
+      setStatus("connecting", "Closed");
+      preview.innerHTML = closedHTML;
+
+      if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+
+      if (socket && socket.readyState < WebSocket.CLOSING) {
+        socket.close();
+      }
+
+      window.setTimeout(() => {
+        try {
+          window.open("", "_self");
+          window.close();
+        } catch (_) {}
+
+        if (!window.closed) {
+          window.location.replace("about:blank");
+        }
+      }, 40);
+    }
+
+    function handleMessage(raw) {
+      let message;
+
+      try {
+        message = JSON.parse(raw);
+      } catch (_) {
+        applyRender(typeof raw === "string" ? raw : "");
+        return;
+      }
+
+      if (!message || typeof message !== "object") {
+        return;
+      }
+
+      if (message.type === "render") {
+        applyRender(typeof message.html === "string" ? message.html : "");
+        return;
+      }
+
+      if (message.type === "scroll") {
+        lastScrollState = message;
+        queueScroll();
+        return;
+      }
+
+      if (message.type === "close") {
+        closePreviewWindow();
+      }
+    }
+
+    function connect() {
+      const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+      socket = new WebSocket(`${scheme}//${location.host}/ws`);
+
+      setStatus("connecting", "Connecting");
+
+      socket.addEventListener("open", () => {
+        setStatus("online", "Live");
+      });
+
+      socket.addEventListener("message", (event) => {
+        handleMessage(event.data);
+      });
+
+      socket.addEventListener("close", () => {
+        socket = null;
+        if (manualClose) {
+          return;
+        }
+        setStatus("connecting", "Reconnecting");
+        if (reconnectTimer !== null) {
+          clearTimeout(reconnectTimer);
+        }
+        reconnectTimer = window.setTimeout(connect, 800);
+      });
+
+      socket.addEventListener("error", () => {
+        setStatus("connecting", "Connection error");
+        socket.close();
+      });
+    }
+
+    connect();
+  </script>
+</body>
+</html>

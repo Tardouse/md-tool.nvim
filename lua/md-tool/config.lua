@@ -60,6 +60,10 @@ local defaults = {
     enabled = true,
     host = "127.0.0.1",
     port = 4399,
+    binary = "auto",
+    debounce = 150,
+    startup_timeout = 5000,
+    log_level = "info",
     auto_open = "auto",
     browser = "auto",
     echo_url = true,
@@ -191,9 +195,16 @@ local function validate(opts)
   validate_boolean("preview.enabled", opts.preview.enabled)
   validate_string("preview.host", opts.preview.host)
   validate_positive_integer("preview.port", opts.preview.port)
+  validate_string("preview.binary", opts.preview.binary)
+  validate_non_negative_integer("preview.debounce", opts.preview.debounce)
+  validate_positive_integer("preview.startup_timeout", opts.preview.startup_timeout)
+  validate_string("preview.log_level", opts.preview.log_level)
   validate_boolean_or_auto("preview.auto_open", opts.preview.auto_open)
   validate_string("preview.browser", opts.preview.browser)
   validate_boolean("preview.echo_url", opts.preview.echo_url)
+  if not vim.tbl_contains({ "trace", "debug", "info", "warn", "error" }, opts.preview.log_level) then
+    error('md-tool: `preview.log_level` must be one of "trace", "debug", "info", "warn", "error".')
+  end
 
   validate_boolean("table.enabled", opts.table.enabled)
   validate_boolean("table.auto_align", opts.table.auto_align)

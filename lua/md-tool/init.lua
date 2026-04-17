@@ -54,6 +54,7 @@ function M.bootstrap()
     return
   end
 
+  preview.bootstrap()
   commands.register()
 
   local group = vim.api.nvim_create_augroup("MDTool", { clear = true })
