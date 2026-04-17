@@ -28,6 +28,14 @@ Neovim `0.11.6+` is the supported baseline. The render module requires Treesitte
 
 Preview now depends on the bundled Rust binary. During local development, `md-tool.nvim` auto-detects `target/release/md-tool-preview`. For packaged installs, either keep the binary on `$PATH`, copy it to `bin/md-tool-preview` inside the plugin directory, or point `preview.binary` at the built executable.
 
+### Example Files
+
+- [examples/lazy.lua](examples/lazy.lua): minimal `lazy.nvim` spec, matching the README style
+- [examples/lazy_config.lua](examples/lazy_config.lua): full `lazy.nvim` spec with all defaults, bilingual comments, and choice notes
+- [examples/packer.lua](examples/packer.lua): `packer.nvim` example
+
+Other plugin managers can reuse the same `require("md-tool").setup({...})` table.
+
 ## Commands
 
 ### Render
@@ -67,6 +75,8 @@ By default, table mode is off on newly opened buffers. If you want it enabled au
 Toggle and enable/disable commands operate on the current Markdown buffer so you can turn off features that are getting in the way without changing your global defaults.
 
 ## Configuration
+
+For the fully annotated default configuration, see [examples/lazy_config.lua](examples/lazy_config.lua). The snippet below stays intentionally shorter.
 
 ```lua
 require("md-tool").setup({
@@ -153,6 +163,16 @@ require("md-tool").setup({
   },
 })
 ```
+
+Key option notes:
+
+- `render.modes` accepts mode prefixes matched against `vim.api.nvim_get_mode().mode`; common values are `"n"`, `"no"`, `"i"`, `"R"`, `"v"`, `"V"`, `"\22"`, and `"c"`.
+- `preview.binary` accepts `"auto"` or a path to an executable preview binary.
+- `preview.auto_open` accepts `true`, `false`, or `"auto"`.
+- `preview.browser` accepts `"auto"`, `"echo"`, or a custom command string. Custom commands may include `%s` as the URL placeholder.
+- `preview.log_level` accepts `"trace"`, `"debug"`, `"info"`, `"warn"`, or `"error"`.
+- `toc.list_marker` accepts `"-"`, `"*"`, or `"+"`.
+- `table.auto_align` and `render.link.*` are currently reserved/validated fields and are not consumed by the current implementation yet.
 
 ## Preview Server
 

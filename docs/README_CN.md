@@ -28,7 +28,17 @@
 
 预览功能现在依赖仓库内的 Rust 二进制。开发环境下插件会自动探测 `target/release/md-tool-preview`；如果是打包安装，可以把二进制放到 `$PATH`，复制到插件目录下的 `bin/md-tool-preview`，或者显式设置 `preview.binary`。
 
+### 示例文件
+
+- [examples/lazy.lua](../examples/lazy.lua)：最简 `lazy.nvim` 配置，和 README 里的写法一致
+- [examples/lazy_config.lua](../examples/lazy_config.lua)：完整 `lazy.nvim` 配置，包含所有默认值、中英文注释和可选值说明
+- [examples/packer.lua](../examples/packer.lua)：`packer.nvim` 配置示例
+
+其他插件管理器也可以直接复用同一份 `require("md-tool").setup({...})` 配置表。
+
 ## 基本配置
+
+如果你想看“完整默认值 + 中英文注释 + 可选值说明”，直接参考 [examples/lazy_config.lua](../examples/lazy_config.lua)。下面这段仍然保留为简版示例。
 
 ```lua
 require("md-tool").setup({
@@ -100,6 +110,16 @@ require("md-tool").setup({
   },
 })
 ```
+
+几个关键可选项说明：
+
+- `render.modes` 按 `vim.api.nvim_get_mode().mode` 的前缀匹配；常见值有 `"n"`、`"no"`、`"i"`、`"R"`、`"v"`、`"V"`、`"\22"`、`"c"`。
+- `preview.binary` 可选 `"auto"` 或一个可执行文件路径。
+- `preview.auto_open` 可选 `true`、`false`、`"auto"`。
+- `preview.browser` 可选 `"auto"`、`"echo"` 或自定义命令字符串；自定义命令可以包含 `%s` 作为 URL 占位符。
+- `preview.log_level` 可选 `"trace"`、`"debug"`、`"info"`、`"warn"`、`"error"`。
+- `toc.list_marker` 可选 `"-"`、`"*"`、`"+"`。
+- `table.auto_align` 和 `render.link.*` 当前属于预留/兼容字段，已经做校验，但现阶段实现还没有实际消费它们。
 
 ## 预览服务
 
