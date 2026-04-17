@@ -62,9 +62,6 @@ function M.register()
   vim.api.nvim_create_user_command("MDTlistDisable", function()
     list.disable()
   end, {})
-  vim.api.nvim_create_user_command("MDTlistFormat", function()
-    list.format_current_list()
-  end, {})
 
   M.registered = true
 end

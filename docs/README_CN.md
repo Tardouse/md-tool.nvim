@@ -157,8 +157,6 @@ cargo build --release
 - `- `、`3. ` 这种空项在 `exit_on_empty = true` 时会退出列表
 - task list 可配置为续写未勾选项，或者保留原始勾选状态
 
-`MDTlistFormat` 当前用于重排光标所在有序列表的编号。
-
 ## TOC 标记
 
 ```md

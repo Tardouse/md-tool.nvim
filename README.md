@@ -63,7 +63,6 @@ By default, table mode is off on newly opened buffers. If you want it enabled au
 - `MDTlistToggle`
 - `MDTlistEnable`
 - `MDTlistDisable`
-- `MDTlistFormat`
 
 Toggle and enable/disable commands operate on the current Markdown buffer so you can turn off features that are getting in the way without changing your global defaults.
 
@@ -223,8 +222,6 @@ The list module is intentionally conservative:
 - It continues lists when pressing `<CR>` at the end of a list line or `o` in normal mode on an existing list item.
 - Empty items like `- ` or `3. ` exit the list instead of generating another marker when `exit_on_empty = true`.
 - Task list continuation can either preserve checkbox state or reset checked items back to unchecked.
-
-`MDTlistFormat` currently renumbers the current ordered list block under the cursor.
 
 ## TOC Markers
 
