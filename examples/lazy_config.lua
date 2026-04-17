@@ -12,9 +12,11 @@ return {
 			"nvim-treesitter/nvim-treesitter",
 		},
 
-		-- [CN] 构建预览模块依赖的 Rust 二进制。
-		-- [EN] Build the Rust preview binary required by the preview module.
-		build = "cargo build --release",
+		-- [CN] 优先下载与当前 tag 匹配的预编译二进制；失败时回退到本地 Cargo 编译。
+		-- [EN] Prefer the prebuilt binary for the current tag and fall back to a local Cargo build.
+		build = function(plugin)
+			dofile(plugin.dir .. "/lua/md-tool/install.lua").build(plugin.dir)
+		end,
 
 		-- [CN] 传给 `require("md-tool").setup()` 的完整默认配置。
 		-- [EN] Full default configuration passed to `require("md-tool").setup()`.

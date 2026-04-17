@@ -21,12 +21,14 @@
   "Tardouse/md-tool.nvim",
   ft = { "markdown" },
   dependencies = { "nvim-treesitter/nvim-treesitter" },
-  build = "cargo build --release",
+  build = function(plugin)
+    dofile(plugin.dir .. "/lua/md-tool/install.lua").build(plugin.dir)
+  end,
   opts = {},
 }
 ```
 
-预览功能现在依赖仓库内的 Rust 二进制。开发环境下插件会自动探测 `target/release/md-tool-preview`；如果是打包安装，可以把二进制放到 `$PATH`，复制到插件目录下的 `bin/md-tool-preview`，或者显式设置 `preview.binary`。
+预览功能现在依赖仓库内的 Rust 二进制。对于 tag 版本安装，`build` 钩子会优先下载对应 GitHub Releases 的预编译二进制到 `bin/md-tool-preview`；如果当前 checkout 不是精确 tag、release 里没有对应 asset，或者本机没有可用下载工具，则自动回退到 `cargo build --release`。开发环境下插件仍会自动探测 `target/release/md-tool-preview`。你也可以把二进制放到 `$PATH`，或者显式设置 `preview.binary`。
 
 ### 示例文件
 
@@ -147,6 +149,15 @@ require("md-tool").setup({
 ```bash
 cargo build --release
 ```
+
+带 tag 的插件 release 也会提供常见目标平台的预编译包：
+
+- `x86_64-unknown-linux-gnu`
+- `x86_64-apple-darwin`
+- `aarch64-apple-darwin`
+- `x86_64-pc-windows-msvc`
+
+安装辅助脚本会尽量下载匹配的预编译包；如果不满足条件，再自动回退到本地 Cargo 编译。
 
 如果你想单独看服务日志，也可以自己启动：
 

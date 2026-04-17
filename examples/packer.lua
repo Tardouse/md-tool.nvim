@@ -12,9 +12,11 @@ return require("packer").startup(function(use)
       "nvim-treesitter/nvim-treesitter",
     },
 
-    -- [CN] 构建本地预览服务二进制。
-    -- [EN] Build the local preview-server binary.
-    run = "cargo build --release",
+    -- [CN] 优先下载与当前 tag 匹配的预编译二进制；失败时回退到本地 Cargo 编译。
+    -- [EN] Prefer the prebuilt binary for the current tag and fall back to a local Cargo build.
+    run = function()
+      require("md-tool.install").build()
+    end,
 
     -- [CN] 插件初始化入口。
     -- [EN] Plugin setup entrypoint.

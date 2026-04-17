@@ -21,12 +21,14 @@ Neovim `0.11.6+` is the supported baseline. The render module requires Treesitte
   "Tardouse/md-tool.nvim",
   ft = { "markdown" },
   dependencies = { "nvim-treesitter/nvim-treesitter" },
-  build = "cargo build --release",
+  build = function(plugin)
+    dofile(plugin.dir .. "/lua/md-tool/install.lua").build(plugin.dir)
+  end,
   opts = {},
 }
 ```
 
-Preview now depends on the bundled Rust binary. During local development, `md-tool.nvim` auto-detects `target/release/md-tool-preview`. For packaged installs, either keep the binary on `$PATH`, copy it to `bin/md-tool-preview` inside the plugin directory, or point `preview.binary` at the built executable.
+Preview now depends on the bundled Rust binary. For tagged installs, the build hook first tries to download a matching GitHub Releases asset into `bin/md-tool-preview`; if the checkout is not on an exact tag, the asset is missing, or no downloader is available, it falls back to `cargo build --release`. During local development, `md-tool.nvim` still auto-detects `target/release/md-tool-preview`. You can also keep the binary on `$PATH` or point `preview.binary` at an explicit executable.
 
 ### Example Files
 
@@ -211,6 +213,15 @@ Build the server once:
 ```bash
 cargo build --release
 ```
+
+Tagged plugin releases also publish prebuilt archives for common targets:
+
+- `x86_64-unknown-linux-gnu`
+- `x86_64-apple-darwin`
+- `aarch64-apple-darwin`
+- `x86_64-pc-windows-msvc`
+
+The install helper downloads the matching archive when possible and otherwise falls back to a local Cargo build.
 
 Run it manually if you want to inspect logs outside Neovim:
 
