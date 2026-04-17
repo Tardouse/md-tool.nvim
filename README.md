@@ -173,7 +173,8 @@ Key option notes:
 - `preview.browser` accepts `"auto"`, `"echo"`, or a custom command string. Custom commands may include `%s` as the URL placeholder.
 - `preview.log_level` accepts `"trace"`, `"debug"`, `"info"`, `"warn"`, or `"error"`.
 - `toc.list_marker` accepts `"-"`, `"*"`, or `"+"`.
-- `table.auto_align` and `render.link.*` are currently reserved/validated fields and are not consumed by the current implementation yet.
+- `render.link.icon`, `render.link.wikilink_icon`, and `render.link.image_icon` control the inline prefixes used for rendered links.
+- `table.auto_align` is still a reserved/validated field and is not consumed by the current implementation yet.
 
 ## Preview Server
 
@@ -239,6 +240,7 @@ The render module keeps the original markdown text untouched and adds styling wi
 - Block quotes get left bars, and common GitHub/Obsidian callout markers such as `[!NOTE]` are rendered more clearly.
 - Code fences get a light block treatment with top and bottom borders and a language label when present.
 - Thematic breaks are redrawn as a full-width rule, and inline code / italic / bold / bold-italic spans conceal their markdown delimiters while keeping dedicated inline highlights.
+- Links, reference links, autolinks, wiki-style `[[links]]`, and image links get prefix icons plus cleaner inline highlighting.
 - Pipe tables get border styling and delimiter/alignment highlights.
 
 By default, render is active in normal/visual/command-like modes through `render.modes`, and the cursor line stays rendered as well. In normal mode, `render.skip_concealed = true` makes the cursor jump across concealed markdown delimiters instead of landing on hidden `*` or `` ` `` positions. Set `render.hide_on_cursorline = true` if you prefer the current line to fall back to raw Markdown while navigating. For compatibility, `render.hide_in_insert` is still accepted and mapped to the new mode model when `render.modes` is not set.

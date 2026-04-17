@@ -18,6 +18,13 @@ local query_sources = {
     (code_span) @inline_code
     (emphasis) @emphasis
     (strong_emphasis) @strong
+    (inline_link) @inline_link
+    (full_reference_link) @full_reference_link
+    (collapsed_reference_link) @collapsed_reference_link
+    (shortcut_link) @shortcut_link
+    (image) @image
+    (uri_autolink) @uri_autolink
+    (email_autolink) @email_autolink
   ]],
 }
 
@@ -30,6 +37,13 @@ local empty_capture_names = {
   inline_code = true,
   emphasis = true,
   strong = true,
+  inline_link = true,
+  full_reference_link = true,
+  collapsed_reference_link = true,
+  shortcut_link = true,
+  image = true,
+  uri_autolink = true,
+  email_autolink = true,
 }
 
 local function get_query(language)

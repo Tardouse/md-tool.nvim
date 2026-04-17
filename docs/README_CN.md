@@ -121,7 +121,8 @@ require("md-tool").setup({
 - `preview.browser` 可选 `"auto"`、`"echo"` 或自定义命令字符串；自定义命令可以包含 `%s` 作为 URL 占位符。
 - `preview.log_level` 可选 `"trace"`、`"debug"`、`"info"`、`"warn"`、`"error"`。
 - `toc.list_marker` 可选 `"-"`、`"*"`、`"+"`。
-- `table.auto_align` 和 `render.link.*` 当前属于预留/兼容字段，已经做校验，但现阶段实现还没有实际消费它们。
+- `render.link.icon`、`render.link.wikilink_icon`、`render.link.image_icon` 用来控制链接渲染时显示的前缀图标。
+- `table.auto_align` 当前仍属于预留/兼容字段，已经做校验，但现阶段实现还没有实际消费它。
 
 ## 预览服务
 
@@ -176,6 +177,7 @@ cargo build --release
 - blockquote 会显示左侧引用条，常见的 `[!NOTE]` / `[!WARNING]` 这类 callout 也会更清晰
 - fenced code block 会带上下边框和语言标签
 - 分割线会重绘成整行 rule，inline code、斜体、粗体、粗斜体会隐藏各自的 Markdown 分隔符，并保留单独的内联高亮
+- 普通链接、引用链接、autolink、`[[Wiki Link]]` 和图片链接会显示前缀图标，并隐藏部分 Markdown 分隔符
 - pipe table 会有表格边框/分隔行增强
 
 现在推荐直接使用 `render.modes` 控制哪些模式下启用渲染。默认光标行也保持渲染；在 normal 模式下，`render.skip_concealed = true` 会让光标直接跳过被隐藏的 Markdown 分隔符，而不是停在看不见的 `*` 或 `` ` `` 上。如果你更希望当前行退回原始 Markdown，可以设置 `render.hide_on_cursorline = true`。为了兼容旧配置，`render.hide_in_insert` 仍然可用；如果没有显式设置 `render.modes`，它会被自动映射到新的模式配置。

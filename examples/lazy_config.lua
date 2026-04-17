@@ -213,27 +213,27 @@ return {
 				},
 
 				link = {
-					-- [CN] 链接渲染配置入口；当前版本配置已保留，但渲染侧暂未消费这些字段。
+					-- [CN] 是否增强链接、图片和常见 autolink 的显示。
 					-- [CN] 可选值: `true` / `false`。
-					-- [EN] Link-render configuration entry point; kept for forward compatibility, but currently not consumed by the renderer.
+					-- [EN] Enable enhanced rendering for links, images, and common autolinks.
 					-- [EN] Choices: `true` / `false`.
 					enabled = true,
 
-					-- [CN] 普通链接前缀图标；当前版本为预留字段，暂未生效。
+					-- [CN] 普通链接和 autolink 的前缀图标。
 					-- [CN] 可选值: 任意字符串。
-					-- [EN] Prefix icon for normal links; reserved for future use in the current implementation.
+					-- [EN] Prefix icon for normal links and autolinks.
 					-- [EN] Choices: any string.
 					icon = "↗ ",
 
-					-- [CN] Wikilink 前缀图标；当前版本为预留字段，暂未生效。
+					-- [CN] `[[Wiki Link]]` 形式的前缀图标。
 					-- [CN] 可选值: 任意字符串。
-					-- [EN] Prefix icon for wiki links; reserved for future use in the current implementation.
+					-- [EN] Prefix icon for `[[Wiki Link]]`-style links.
 					-- [EN] Choices: any string.
 					wikilink_icon = "§ ",
 
-					-- [CN] 图片链接前缀图标；当前版本为预留字段，暂未生效。
+					-- [CN] 图片链接的前缀图标。
 					-- [CN] 可选值: 任意字符串。
-					-- [EN] Prefix icon for image links; reserved for future use in the current implementation.
+					-- [EN] Prefix icon for image links.
 					-- [EN] Choices: any string.
 					image_icon = "◫ ",
 				},

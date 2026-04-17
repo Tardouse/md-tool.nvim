@@ -12,6 +12,7 @@ local window_state = {}
 local cursor_state = {}
 local schedule_refresh
 local highlights_ready = false
+local markdown_query_overrides_ready = false
 
 local callouts = {
   note = { icon = "ℹ ", group = "MDTCalloutInfo" },
@@ -120,6 +121,33 @@ local function restore_window_options(winid)
   window_state[winid] = nil
 end
 
+local function ensure_markdown_query_overrides()
+  if markdown_query_overrides_ready then
+    return
+  end
+
+  local files = vim.api.nvim_get_runtime_file("queries/markdown_inline/highlights.scm", true)
+  local query_path
+  for _, path in ipairs(files) do
+    if path:find("/md%-tool%.nvim/queries/markdown_inline/highlights%.scm$", 1, false) then
+      query_path = path
+      break
+    end
+  end
+
+  if not query_path then
+    return
+  end
+
+  local ok, lines = pcall(vim.fn.readfile, query_path)
+  if not ok or not lines then
+    return
+  end
+
+  pcall(vim.treesitter.query.set, "markdown_inline", "highlights", table.concat(lines, "\n"))
+  markdown_query_overrides_ready = true
+end
+
 local function apply_window_options(bufnr, rendered, cfg)
   for _, winid in ipairs(buffer_windows(bufnr)) do
     if rendered then
@@ -143,6 +171,32 @@ local function fit_text(text, target_width)
     return text
   end
   return text .. string.rep(" ", target_width - width)
+end
+
+local function fit_text_exact(text, target_width)
+  target_width = math.max(target_width or 0, 0)
+  if target_width == 0 then
+    return ""
+  end
+
+  local width = 0
+  local parts = {}
+  local count = vim.fn.strchars(text or "")
+  for index = 0, count - 1 do
+    local char = vim.fn.strcharpart(text, index, 1)
+    local char_width = utils.display_width(char)
+    if width + char_width > target_width then
+      break
+    end
+    parts[#parts + 1] = char
+    width = width + char_width
+  end
+
+  local out = table.concat(parts)
+  if width < target_width then
+    out = out .. string.rep(" ", target_width - width)
+  end
+  return out
 end
 
 local function render_width_fill(char, width)
@@ -229,6 +283,20 @@ local function node_first_child_of_type(node, type_name)
       return child
     end
   end
+end
+
+local function node_range(node)
+  if not node then
+    return nil
+  end
+
+  local start_row, start_col, end_row, end_col = node:range()
+  return {
+    start_row = start_row,
+    start_col = start_col,
+    end_row = end_row,
+    end_col = end_col,
+  }
 end
 
 local function list_nesting_level(node)
@@ -319,6 +387,15 @@ local function merge_ranges(ranges)
   end
 
   return merged
+end
+
+local function spans_wrap_boundary(start_col, end_col, width)
+  width = math.max(width or 0, 1)
+  if end_col <= start_col then
+    return false
+  end
+
+  return math.floor(start_col / width) ~= math.floor((end_col - 1) / width)
 end
 
 local function normalize_conceal_rows(rows)
@@ -1009,6 +1086,48 @@ local function conceal_ts_node(ctx, node, opts)
   end
 end
 
+local function conceal_ts_range(ctx, row, start_col, end_col, opts)
+  if start_col < end_col then
+    ctx.decorator:conceal(row, start_col, end_col, opts)
+  end
+end
+
+local function conceal_ts_range_exact(ctx, row, start_col, end_col, text, priority)
+  if start_col >= end_col then
+    return
+  end
+
+  conceal_ts_range(ctx, row, start_col, end_col, {
+    text = fit_text_exact(text, end_col - start_col),
+    priority = priority or 231,
+  })
+end
+
+local function conceal_literal_descendants(ctx, node, types, opts)
+  for child in node:iter_children() do
+    if types[child:type()] then
+      conceal_ts_node(ctx, child, opts)
+    end
+    conceal_literal_descendants(ctx, child, types, opts)
+  end
+end
+
+local function highlight_trimmed_node(ctx, node, left_trim, right_trim, group, opts)
+  if not node then
+    return false
+  end
+
+  local start_row, start_col, end_row, end_col = node:range()
+  start_col = start_col + (left_trim or 0)
+  end_col = end_col - (right_trim or 0)
+  if start_row == end_row and end_col <= start_col then
+    return false
+  end
+
+  highlight_ts_range(ctx, start_row, start_col, end_row, end_col, group, opts)
+  return true
+end
+
 local function delimiters_and_body(node, delimiter_type)
   local delimiters = node_children_of_type(node, delimiter_type)
   if #delimiters < 2 then
@@ -1026,6 +1145,339 @@ local function delimiters_and_body(node, delimiter_type)
       end_col = last_start_col,
     },
   }
+end
+
+local function wiki_shortcut_bounds(capture, line)
+  if capture.start_row ~= capture.end_row or capture.start_col == 0 then
+    return nil
+  end
+
+  local before = line:sub(capture.start_col, capture.start_col)
+  local after = line:sub(capture.end_col + 1, capture.end_col + 1)
+  if before == "[" and after == "]" then
+    return {
+      start_col = capture.start_col - 1,
+      end_col = capture.end_col + 1,
+    }
+  end
+end
+
+local function trimmed_single_line_node_text(ctx, node, left_trim, right_trim)
+  local info = node_range(node)
+  if not info or info.start_row ~= info.end_row then
+    return nil
+  end
+
+  local start_col = info.start_col + (left_trim or 0)
+  local end_col = info.end_col - (right_trim or 0)
+  if end_col < start_col then
+    return nil
+  end
+
+  local line = ctx.lines[info.start_row + 1] or ""
+  return line:sub(start_col + 1, end_col)
+end
+
+local function trailing_link_suffix(line, start_col)
+  local tail = line:sub(start_col + 1)
+  if tail == "" then
+    return {
+      end_col = #line,
+      suffix = "",
+    }
+  end
+
+  local suffix = tail:match("^([%)%]%}%.,;:!?\"']*)%s*$")
+  if suffix == nil then
+    return nil
+  end
+
+  return {
+    end_col = #line,
+    suffix = suffix,
+  }
+end
+
+local function render_inline_link_tail(ctx, capture, chunks)
+  if capture.start_row ~= capture.end_row or #chunks == 0 then
+    return false
+  end
+
+  local line = ctx.lines[capture.start_row] or ""
+  local suffix = trailing_link_suffix(line, capture.end_col)
+  if not suffix or capture.start_col >= suffix.end_col then
+    return false
+  end
+
+  local render_chunks = {}
+  for _, chunk in ipairs(chunks) do
+    render_chunks[#render_chunks + 1] = { chunk[1], chunk[2] }
+  end
+  if suffix.suffix ~= "" then
+    render_chunks[#render_chunks + 1] = { suffix.suffix, "Normal" }
+  end
+
+  conceal_ts_range(ctx, capture.start_row, capture.start_col, suffix.end_col, {
+    priority = 231,
+  })
+  ctx.decorator:overlay(capture.start_row, capture.start_col, render_chunks, {
+    pos = "inline",
+    priority = 232,
+  })
+  return true
+end
+
+local function render_link_node(ctx, capture, spec)
+  local row = capture.start_row
+  if ctx.flags.code[row] or not ctx.cfg.link.enabled then
+    return
+  end
+
+  local node = capture.node
+  local line = ctx.lines[row] or ""
+  local text_node = spec.text_type and node_first_child_of_type(node, spec.text_type) or nil
+  local meta_node = spec.meta_type and node_first_child_of_type(node, spec.meta_type) or nil
+  local icon_col = capture.start_col
+
+  if spec.skip and spec.skip(capture, line) then
+    return
+  end
+
+  if spec.text_group and text_node then
+    highlight_trimmed_node(ctx, text_node, spec.text_trim_left, spec.text_trim_right, spec.text_group, {
+      priority = spec.text_priority or 162,
+    })
+  end
+
+  if spec.meta_group and meta_node then
+    highlight_trimmed_node(ctx, meta_node, spec.meta_trim_left, spec.meta_trim_right, spec.meta_group, {
+      priority = spec.meta_priority or 160,
+    })
+  end
+
+  if spec.capture_group then
+    local capture_start_col = capture.start_col + (spec.capture_trim_left or 0)
+    local capture_end_col = capture.end_col - (spec.capture_trim_right or 0)
+    if capture.start_row == capture.end_row and capture_end_col <= capture_start_col then
+      capture_start_col = nil
+    end
+
+    if capture_start_col then
+    highlight_ts_range(
+      ctx,
+      capture.start_row - 1,
+      capture_start_col,
+      capture.end_row - 1,
+      capture_end_col,
+      spec.capture_group,
+      { priority = spec.capture_priority or 158 }
+    )
+    end
+  end
+
+  if spec.skip_conceal_when_wrapped and ctx.wrap and spans_wrap_boundary(capture.start_col, capture.end_col, ctx.width) then
+    return
+  end
+
+  if spec.literal_types then
+    conceal_literal_descendants(ctx, node, spec.literal_types, { priority = 231 })
+  end
+
+  if spec.extra_conceal then
+    spec.extra_conceal(ctx, capture, line, node, text_node, meta_node)
+  end
+end
+
+local function render_inline_link_capture(ctx, capture)
+  render_link_node(ctx, capture, {
+    text_type = "link_text",
+    meta_type = "link_destination",
+    text_group = "MDTLinkText",
+    meta_group = "MDTLinkUrl",
+    skip_conceal_when_wrapped = true,
+    extra_conceal = function(render_ctx, link_capture, _, _, text_node, meta_node)
+      local text_info = node_range(text_node)
+      local meta_info = node_range(meta_node)
+      if not text_info or not meta_info or text_info.start_row ~= text_info.end_row or meta_info.start_row ~= meta_info.end_row then
+        return
+      end
+
+      local text = trimmed_single_line_node_text(render_ctx, text_node)
+      if text and render_inline_link_tail(render_ctx, link_capture, {
+        { render_ctx.cfg.link.icon, "MDTLinkUrl" },
+        { text, "MDTLinkText" },
+      }) then
+        return
+      end
+
+      conceal_ts_range_exact(
+        render_ctx,
+        link_capture.start_row,
+        link_capture.start_col,
+        text_info.start_col,
+        vim.trim(render_ctx.cfg.link.icon),
+        231
+      )
+      conceal_ts_range_exact(render_ctx, link_capture.start_row, text_info.end_col, meta_info.start_col, " ", 231)
+      conceal_ts_range_exact(render_ctx, link_capture.start_row, meta_info.end_col, link_capture.end_col, "", 231)
+    end,
+    literal_types = {
+    },
+  })
+end
+
+local function render_full_reference_link_capture(ctx, capture)
+  render_link_node(ctx, capture, {
+    text_type = "link_text",
+    meta_type = "link_label",
+    text_group = "MDTLinkText",
+    meta_group = "MDTLinkUrl",
+    meta_trim_left = 1,
+    meta_trim_right = 1,
+    extra_conceal = function(render_ctx, link_capture, _, _, text_node, meta_node)
+      local text_info = node_range(text_node)
+      local meta_info = node_range(meta_node)
+      if not text_info or not meta_info or text_info.start_row ~= text_info.end_row or meta_info.start_row ~= meta_info.end_row then
+        return
+      end
+
+      conceal_ts_range_exact(
+        render_ctx,
+        link_capture.start_row,
+        link_capture.start_col,
+        text_info.start_col,
+        vim.trim(render_ctx.cfg.link.icon),
+        231
+      )
+      conceal_ts_range_exact(render_ctx, link_capture.start_row, text_info.end_col, meta_info.start_col, " ", 231)
+      conceal_ts_range_exact(render_ctx, link_capture.start_row, meta_info.end_col, link_capture.end_col, "", 231)
+    end,
+    literal_types = {
+    },
+  })
+end
+
+local function render_collapsed_reference_link_capture(ctx, capture)
+  render_link_node(ctx, capture, {
+    text_type = "link_text",
+    text_group = "MDTLinkText",
+    extra_conceal = function(render_ctx, link_capture, _, _, text_node)
+      local text_info = node_range(text_node)
+      if not text_info or text_info.start_row ~= text_info.end_row then
+        return
+      end
+
+      conceal_ts_range_exact(
+        render_ctx,
+        link_capture.start_row,
+        link_capture.start_col,
+        text_info.start_col,
+        vim.trim(render_ctx.cfg.link.icon),
+        231
+      )
+      conceal_ts_range_exact(render_ctx, link_capture.start_row, text_info.end_col, link_capture.end_col, "", 231)
+    end,
+    literal_types = {
+    },
+  })
+end
+
+local function render_shortcut_link_capture(ctx, capture)
+  local line = ctx.lines[capture.start_row] or ""
+  local wiki_bounds = wiki_shortcut_bounds(capture, line)
+  render_link_node(ctx, capture, {
+    text_type = "link_text",
+    text_group = wiki_bounds and "MDTWikiLink" or "MDTLinkText",
+    extra_conceal = function(render_ctx, link_capture, _, _, text_node)
+      local text_info = node_range(text_node)
+      if not text_info or text_info.start_row ~= text_info.end_row then
+        return
+      end
+
+      if wiki_bounds then
+        conceal_ts_range_exact(
+          render_ctx,
+          link_capture.start_row,
+          wiki_bounds.start_col,
+          text_info.start_col,
+          render_ctx.cfg.link.wikilink_icon,
+          231
+        )
+        conceal_ts_range_exact(render_ctx, link_capture.start_row, text_info.end_col, wiki_bounds.end_col, "", 231)
+      else
+        conceal_ts_range_exact(
+          render_ctx,
+          link_capture.start_row,
+          link_capture.start_col,
+          text_info.start_col,
+          vim.trim(render_ctx.cfg.link.icon),
+          231
+        )
+        conceal_ts_range_exact(render_ctx, link_capture.start_row, text_info.end_col, link_capture.end_col, "", 231)
+      end
+    end,
+    skip = function(link_capture, current_line)
+      return current_line:sub(link_capture.end_col + 1, link_capture.end_col + 1) == ":"
+    end,
+  })
+end
+
+local function render_image_capture(ctx, capture)
+  render_link_node(ctx, capture, {
+    text_type = "image_description",
+    meta_type = "link_destination",
+    text_group = "MDTImageLink",
+    meta_group = "MDTLinkUrl",
+    skip_conceal_when_wrapped = true,
+    extra_conceal = function(render_ctx, link_capture, _, _, text_node, meta_node)
+      local text_info = node_range(text_node)
+      local meta_info = node_range(meta_node)
+      if not text_info or not meta_info or text_info.start_row ~= text_info.end_row or meta_info.start_row ~= meta_info.end_row then
+        return
+      end
+
+      local text = trimmed_single_line_node_text(render_ctx, text_node)
+      if text and render_inline_link_tail(render_ctx, link_capture, {
+        { render_ctx.cfg.link.image_icon, "MDTLinkUrl" },
+        { text, "MDTImageLink" },
+      }) then
+        return
+      end
+
+      conceal_ts_range_exact(
+        render_ctx,
+        link_capture.start_row,
+        link_capture.start_col,
+        text_info.start_col,
+        render_ctx.cfg.link.image_icon,
+        231
+      )
+      conceal_ts_range_exact(render_ctx, link_capture.start_row, text_info.end_col, meta_info.start_col, " ", 231)
+      conceal_ts_range_exact(render_ctx, link_capture.start_row, meta_info.end_col, link_capture.end_col, "", 231)
+    end,
+    literal_types = {
+    },
+  })
+end
+
+local function render_autolink_capture(ctx, capture)
+  render_link_node(ctx, capture, {
+    capture_group = "MDTLinkUrl",
+    capture_trim_left = 1,
+    capture_trim_right = 1,
+    skip_conceal_when_wrapped = true,
+    extra_conceal = function(render_ctx, link_capture)
+      conceal_ts_range_exact(
+        render_ctx,
+        link_capture.start_row,
+        link_capture.start_col,
+        link_capture.start_col + 1,
+        vim.trim(render_ctx.cfg.link.icon),
+        231
+      )
+      conceal_ts_range_exact(render_ctx, link_capture.start_row, link_capture.end_col - 1, link_capture.end_col, "", 231)
+    end,
+  })
 end
 
 local function render_inline_code_capture(ctx, capture)
@@ -1136,6 +1588,7 @@ function M.refresh(bufnr, force)
   end
 
   ensure_highlights()
+  ensure_markdown_query_overrides()
   local buffer_state = ensure_buffer_state(bufnr)
   local cfg = config.get().render
   local decorator = Decorator.new(bufnr, namespace)
@@ -1239,6 +1692,27 @@ function M.refresh(bufnr, force)
   end
   for _, capture in ipairs(captures.inline_code) do
     render_inline_code_capture(ctx, capture)
+  end
+  for _, capture in ipairs(captures.inline_link) do
+    render_inline_link_capture(ctx, capture)
+  end
+  for _, capture in ipairs(captures.full_reference_link) do
+    render_full_reference_link_capture(ctx, capture)
+  end
+  for _, capture in ipairs(captures.collapsed_reference_link) do
+    render_collapsed_reference_link_capture(ctx, capture)
+  end
+  for _, capture in ipairs(captures.shortcut_link) do
+    render_shortcut_link_capture(ctx, capture)
+  end
+  for _, capture in ipairs(captures.image) do
+    render_image_capture(ctx, capture)
+  end
+  for _, capture in ipairs(captures.uri_autolink) do
+    render_autolink_capture(ctx, capture)
+  end
+  for _, capture in ipairs(captures.email_autolink) do
+    render_autolink_capture(ctx, capture)
   end
   for _, capture in ipairs(captures.emphasis) do
     render_emphasis_capture(ctx, capture, "emphasis")
