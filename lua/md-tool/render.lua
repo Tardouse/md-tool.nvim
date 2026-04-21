@@ -13,6 +13,8 @@ local cursor_state = {}
 local schedule_refresh
 local highlights_ready = false
 local markdown_query_overrides_ready = false
+local markdown_query_overrides_changed = false
+local markdown_query_restarted_buffers = {}
 
 local callouts = {
   note = { icon = "ℹ ", group = "MDTCalloutInfo" },
@@ -121,11 +123,43 @@ local function restore_window_options(winid)
   window_state[winid] = nil
 end
 
-local function ensure_markdown_query_overrides()
-  if markdown_query_overrides_ready then
-    return
+local function active_query_files(language, query_name)
+  local ok, files = pcall(vim.treesitter.query.get_files, language, query_name)
+  if ok and type(files) == "table" and #files > 0 then
+    return files
   end
 
+  return vim.api.nvim_get_runtime_file(("queries/%s/%s.scm"):format(language, query_name), true)
+end
+
+local function read_query_source(files)
+  local chunks = {}
+  for _, path in ipairs(files) do
+    local ok, lines = pcall(vim.fn.readfile, path)
+    if ok and lines then
+      chunks[#chunks + 1] = table.concat(lines, "\n")
+    end
+  end
+
+  return table.concat(chunks, "\n")
+end
+
+local function override_markdown_highlight_query()
+  local source = read_query_source(active_query_files("markdown", "highlights"))
+  if source == "" or not source:find("conceal_lines", 1, true) then
+    return false
+  end
+
+  local patched = source:gsub("%(#set!%s+conceal_lines%s+\"\"%)", "")
+  if patched == source then
+    return false
+  end
+
+  local ok = pcall(vim.treesitter.query.set, "markdown", "highlights", patched)
+  return ok
+end
+
+local function override_markdown_inline_highlight_query()
   local files = vim.api.nvim_get_runtime_file("queries/markdown_inline/highlights.scm", true)
   local query_path
   for _, path in ipairs(files) do
@@ -141,11 +175,38 @@ local function ensure_markdown_query_overrides()
 
   local ok, lines = pcall(vim.fn.readfile, query_path)
   if not ok or not lines then
+    return false
+  end
+
+  return pcall(vim.treesitter.query.set, "markdown_inline", "highlights", table.concat(lines, "\n"))
+end
+
+local function restart_markdown_highlighter(bufnr)
+  if not bufnr or markdown_query_restarted_buffers[bufnr] or not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
 
-  pcall(vim.treesitter.query.set, "markdown_inline", "highlights", table.concat(lines, "\n"))
+  local active = vim.treesitter.highlighter and vim.treesitter.highlighter.active
+  if type(active) ~= "table" or not active[bufnr] then
+    return
+  end
+
+  markdown_query_restarted_buffers[bufnr] = true
+  pcall(vim.treesitter.stop, bufnr, "markdown")
+  pcall(vim.treesitter.start, bufnr, "markdown")
+end
+
+local function ensure_markdown_query_overrides(bufnr)
+  if not markdown_query_overrides_ready then
+    markdown_query_overrides_changed = override_markdown_highlight_query() or markdown_query_overrides_changed
+    markdown_query_overrides_changed = override_markdown_inline_highlight_query() or markdown_query_overrides_changed
+  end
+
   markdown_query_overrides_ready = true
+
+  if markdown_query_overrides_changed then
+    restart_markdown_highlighter(bufnr)
+  end
 end
 
 local function apply_window_options(bufnr, rendered, cfg)
@@ -562,6 +623,17 @@ local function mode_enabled(modes, mode)
   return false
 end
 
+local function window_text_width(winid)
+  local width = vim.api.nvim_win_get_width(winid)
+  local ok, info = pcall(vim.fn.getwininfo, winid)
+  local textoff = 0
+  if ok and type(info) == "table" and info[1] and type(info[1].textoff) == "number" then
+    textoff = info[1].textoff
+  end
+
+  return math.max(width - textoff, 1)
+end
+
 local function collect_view(bufnr, cfg)
   local wins = {}
   for _, winid in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
@@ -581,6 +653,7 @@ local function collect_view(bufnr, cfg)
   local ranges = {}
   local hidden_rows = {}
   local width
+  local wrap = false
 
   for _, winid in ipairs(wins) do
     local view = vim.api.nvim_win_call(winid, function()
@@ -600,8 +673,9 @@ local function collect_view(bufnr, cfg)
       if cfg.hide_on_cursorline then
         hidden_rows[view.cursor] = true
       end
-      local win_width = math.max(vim.api.nvim_win_get_width(winid), 20)
+      local win_width = window_text_width(winid)
       width = width and math.min(width, win_width) or win_width
+      wrap = wrap or vim.wo[winid].wrap
     end
   end
 
@@ -627,6 +701,7 @@ local function collect_view(bufnr, cfg)
     hidden_rows = hidden_rows,
     visible_rows = visible_rows,
     width = width,
+    wrap = wrap,
   }
 end
 
@@ -635,6 +710,7 @@ local function build_signature(bufnr, mode, view)
     tostring(vim.api.nvim_buf_get_changedtick(bufnr)),
     mode,
     tostring(view.width),
+    tostring(view.wrap),
   }
 
   for _, range in ipairs(view.ranges) do
@@ -814,16 +890,24 @@ local function ensure_highlights()
 end
 
 local function code_open_chunks(width, cfg, info)
+  width = math.max(width or 0, 1)
   local label = code_language(info)
   if label == "" or not cfg.language then
     return {
-      { "╭" .. render_width_fill("─", math.max(width - 1, 2)), "MDTCodeBorder" },
+      { "╭" .. render_width_fill("─", math.max(width - 1, 0)), "MDTCodeBorder" },
     }
   end
 
   label = " " .. label .. " "
   local left = "╭─"
-  local fill = render_width_fill("─", math.max(width - utils.display_width(left) - utils.display_width(label), 2))
+  local fill_width = width - utils.display_width(left) - utils.display_width(label)
+  if fill_width <= 0 then
+    return {
+      { "╭" .. render_width_fill("─", math.max(width - 1, 0)), "MDTCodeBorder" },
+    }
+  end
+
+  local fill = render_width_fill("─", fill_width)
   return {
     { left, "MDTCodeBorder" },
     { label, "MDTCodeInfo" },
@@ -832,15 +916,16 @@ local function code_open_chunks(width, cfg, info)
 end
 
 local function code_close_chunks(width)
+  width = math.max(width or 0, 1)
   return {
-    { "╰" .. render_width_fill("─", math.max(width - 1, 2)), "MDTCodeBorder" },
+    { "╰" .. render_width_fill("─", math.max(width - 1, 0)), "MDTCodeBorder" },
   }
 end
 
 local function conceal_code_fence_line(ctx, row)
   local line = ctx.lines[row] or ""
   ctx.decorator:conceal(row, 0, #line, {
-    priority = 239,
+    priority = 999,
   })
 end
 
@@ -993,7 +1078,7 @@ local function render_code_block(ctx, capture)
 
   local start_row = capture.start_row
   local end_row = inclusive_capture_end_row(capture)
-  local width = math.max(ctx.width, cfg.min_width)
+  local width = ctx.wrap and ctx.width or math.max(ctx.width, cfg.min_width)
   local opening_marker, opening_length = utils.is_fence_line(ctx.lines[start_row] or "")
   local closing_marker, closing_length = utils.is_fence_line(ctx.lines[end_row] or "")
   local has_closing_fence = end_row ~= start_row
@@ -1012,20 +1097,20 @@ local function render_code_block(ctx, capture)
   if cfg.border and ctx.visible_rows[start_row] then
     conceal_code_fence_line(ctx, start_row)
     ctx.decorator:overlay(start_row, 0, code_open_chunks(width, cfg, info), {
-      priority = 240,
+      priority = 1000,
     })
   elseif cfg.language and info ~= "" and ctx.visible_rows[start_row] then
     local label = " " .. code_language(info) .. " "
     conceal_code_fence_line(ctx, start_row)
     ctx.decorator:overlay(start_row, 0, { { label, "MDTCodeInfo" } }, {
-      priority = 240,
+      priority = 1000,
     })
   end
 
   if cfg.border and has_closing_fence and ctx.visible_rows[end_row] then
     conceal_code_fence_line(ctx, end_row)
     ctx.decorator:overlay(end_row, 0, code_close_chunks(width), {
-      priority = 240,
+      priority = 1000,
     })
   end
 end
@@ -1612,7 +1697,7 @@ function M.refresh(bufnr, force)
   end
 
   ensure_highlights()
-  ensure_markdown_query_overrides()
+  ensure_markdown_query_overrides(bufnr)
   local buffer_state = ensure_buffer_state(bufnr)
   local cfg = config.get().render
   local decorator = Decorator.new(bufnr, namespace)
@@ -1680,6 +1765,7 @@ function M.refresh(bufnr, force)
     conceal_rows = {},
     decorator = nil,
     width = view.width,
+    wrap = view.wrap,
     lines = lines,
     visible_rows = view.visible_rows,
     flags = {
