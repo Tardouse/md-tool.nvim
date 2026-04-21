@@ -299,6 +299,14 @@ local function node_range(node)
   }
 end
 
+local function inclusive_capture_end_row(capture)
+  if capture.end_col == 0 and capture.end_row > capture.start_row then
+    return capture.end_row - 1
+  end
+
+  return capture.end_row
+end
+
 local function list_nesting_level(node)
   local level = 0
   while node do
@@ -829,6 +837,13 @@ local function code_close_chunks(width)
   }
 end
 
+local function conceal_code_fence_line(ctx, row)
+  local line = ctx.lines[row] or ""
+  ctx.decorator:conceal(row, 0, #line, {
+    priority = 239,
+  })
+end
+
 local function render_heading(ctx, capture)
   local cfg = ctx.cfg.heading
   if not cfg.enabled then
@@ -977,8 +992,14 @@ local function render_code_block(ctx, capture)
   end
 
   local start_row = capture.start_row
-  local end_row = capture.end_row
+  local end_row = inclusive_capture_end_row(capture)
   local width = math.max(ctx.width, cfg.min_width)
+  local opening_marker, opening_length = utils.is_fence_line(ctx.lines[start_row] or "")
+  local closing_marker, closing_length = utils.is_fence_line(ctx.lines[end_row] or "")
+  local has_closing_fence = end_row ~= start_row
+    and opening_marker ~= nil
+    and closing_marker == opening_marker
+    and closing_length >= opening_length
 
   for row = start_row, end_row do
     if ctx.visible_rows[row] then
@@ -989,17 +1010,20 @@ local function render_code_block(ctx, capture)
 
   local info = fence_info(ctx.lines[start_row] or "")
   if cfg.border and ctx.visible_rows[start_row] then
+    conceal_code_fence_line(ctx, start_row)
     ctx.decorator:overlay(start_row, 0, code_open_chunks(width, cfg, info), {
       priority = 240,
     })
   elseif cfg.language and info ~= "" and ctx.visible_rows[start_row] then
     local label = " " .. code_language(info) .. " "
+    conceal_code_fence_line(ctx, start_row)
     ctx.decorator:overlay(start_row, 0, { { label, "MDTCodeInfo" } }, {
       priority = 240,
     })
   end
 
-  if cfg.border and end_row ~= start_row and ctx.visible_rows[end_row] then
+  if cfg.border and has_closing_fence and ctx.visible_rows[end_row] then
+    conceal_code_fence_line(ctx, end_row)
     ctx.decorator:overlay(end_row, 0, code_close_chunks(width), {
       priority = 240,
     })
