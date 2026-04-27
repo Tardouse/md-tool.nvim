@@ -8,6 +8,7 @@
 
 - `MDTrender*`：在 Neovim 内对标题、列表、引用、Callout、表格、代码块、分割线做增强渲染，不改动原始文本
 - `MDTpriview*`：生成 HTML 预览，支持自动打开、手动浏览器命令、仅回显 URL
+- `MDTupload`：在图片链接处调用 PicGo 上传本地或在线图片，并用图床 URL 回写 Markdown
 - `MDTtable*`：打开 buffer-local 表格模式，编辑时自动识别并格式化当前表格；插入态下 `|` 会补下一个单元格，`<CR>` 会生成分隔线或下一行，也支持手动格式化
 - `MDTtoc*`：根据标题生成或更新 TOC，使用固定标记块
 - `MDTlist*`：更保守的 Markdown 列表续写，替代侵入性更强的行为
@@ -97,6 +98,16 @@ require("md-tool").setup({
     browser = "auto",
     echo_url = true,
   },
+  upload = {
+    temp_dir = "",
+    filename = nil,
+    picgo = {
+      command = "picgo",
+      args = {},
+      config_path = nil,
+      config = nil,
+    },
+  },
   table = {
     enabled = false,
     auto_align = false,
@@ -120,9 +131,36 @@ require("md-tool").setup({
 - `preview.auto_open` 可选 `true`、`false`、`"auto"`。
 - `preview.browser` 可选 `"auto"`、`"echo"` 或自定义命令字符串；自定义命令可以包含 `%s` 作为 URL 占位符。
 - `preview.log_level` 可选 `"trace"`、`"debug"`、`"info"`、`"warn"`、`"error"`。
+- `upload.filename` 可选 `nil`、模板字符串或 Lua 函数；模板支持 `{origin}`、`{y}`、`{m}`、`{d}`、`{h}`、`{i}`、`{s}`、`{timestamp}`、`{rand}`。
+- `upload.picgo.command` 用来指定 PicGo CLI 可执行文件；`upload.picgo.args` 会在 `u` 子命令前追加额外全局参数。
+- `upload.picgo.config_path` 用来复用已有 PicGo 配置文件；`upload.picgo.config` 则允许直接在 `setup()` 里写 Lua 表，上传时会临时编码成 JSON 配置传给 PicGo。
 - `toc.list_marker` 可选 `"-"`、`"*"`、`"+"`。
 - `render.link.icon`、`render.link.wikilink_icon`、`render.link.image_icon` 用来控制链接渲染时显示的前缀图标。
 - `table.auto_align` 当前仍属于预留/兼容字段，已经做校验，但现阶段实现还没有实际消费它。
+
+## 图片上传
+
+把光标放在 Markdown 图片链接内部，例如 `![alt](./image.png)` 或 `![alt](https://example.com/a.png)`，然后执行 `:MDTupload`。
+
+- 本地图片会通过 PicGo 上传，并把 Markdown 里的目标地址替换成返回的图床 URL。
+- 在线图片会先下载到临时文件，再走同一条 PicGo 上传流程。
+- 插件只会替换图片链接里的目标地址，`alt` 文本和可选 title 会保留。
+
+示例配置：
+
+```lua
+require("md-tool").setup({
+  upload = {
+    filename = "{origin}-{y}{m}{d}{h}{i}{s}",
+    picgo = {
+      command = "picgo",
+      config_path = vim.fn.expand("~/.picgo/config.json"),
+    },
+  },
+})
+```
+
+如果你更希望直接在插件配置里写 PicGo，也可以设置 `upload.picgo.config = { ... }`。插件会把这张 Lua 表临时写成 JSON；如果设置了 `upload.picgo.config_path`，临时文件会写到它旁边；否则会写到 PicGo 默认的 `~/.picgo/config.json` 同目录，这样 PicGo 仍然能从旁边的 `node_modules` 发现已安装插件。不要把真实密钥直接提交到公开仓库里。
 
 ## 预览服务
 

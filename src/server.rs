@@ -1,5 +1,6 @@
 use std::{
     collections::HashSet,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -8,14 +9,16 @@ use std::{
 
 use anyhow::Result;
 use axum::{
-    extract::{ws::WebSocketUpgrade, Json, State},
-    http::StatusCode,
-    response::{Html, IntoResponse},
+    body::Body,
+    extract::{ws::WebSocketUpgrade, Json, Path as AxumPath, State},
+    http::{header, HeaderValue, StatusCode},
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
 use tokio::{
+    fs,
     net::TcpListener,
     signal,
     sync::{broadcast, Mutex, RwLock},
@@ -35,8 +38,15 @@ pub struct ServerConfig {
 #[derive(Debug)]
 struct DocumentState {
     markdown: String,
+    base_dir: Option<String>,
     html: Arc<str>,
     version: u64,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+struct UpdateRequest {
+    markdown: String,
+    base_dir: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -97,12 +107,13 @@ pub type SharedState = Arc<AppState>;
 
 impl AppState {
     fn new() -> Self {
-        let html = Arc::<str>::from(markdown::render(""));
+        let html = Arc::<str>::from(markdown::render("", None));
         let (events, _) = broadcast::channel(128);
 
         Self {
             document: RwLock::new(DocumentState {
                 markdown: String::new(),
+                base_dir: None,
                 html,
                 version: 0,
             }),
@@ -146,23 +157,27 @@ impl AppState {
         self.scroll.read().await.as_ref().copied().map(scroll_event)
     }
 
-    pub async fn apply_markdown_update(&self, markdown_input: String) -> UpdateOutcome {
+    async fn apply_markdown_update(&self, request: UpdateRequest) -> UpdateOutcome {
         {
             let document = self.document.read().await;
-            if document.markdown == markdown_input {
+            if document.markdown == request.markdown && document.base_dir == request.base_dir {
                 return UpdateOutcome::Unchanged;
             }
         }
 
-        let html = Arc::<str>::from(markdown::render(&markdown_input));
+        let html = Arc::<str>::from(markdown::render(
+            &request.markdown,
+            request.base_dir.as_deref().map(Path::new),
+        ));
 
         let version = {
             let mut document = self.document.write().await;
-            if document.markdown == markdown_input {
+            if document.markdown == request.markdown && document.base_dir == request.base_dir {
                 return UpdateOutcome::Unchanged;
             }
 
-            document.markdown = markdown_input;
+            document.markdown = request.markdown;
+            document.base_dir = request.base_dir;
             document.html = html.clone();
             document.version += 1;
             document.version
@@ -199,6 +214,7 @@ impl AppState {
         {
             let mut document = self.document.write().await;
             document.markdown.clear();
+            document.base_dir = None;
             document.html = Arc::<str>::from("");
             document.version += 1;
         }
@@ -235,6 +251,7 @@ fn app(state: SharedState) -> Router {
         .route("/", get(index))
         .route("/health", get(health))
         .route("/capabilities", get(capabilities))
+        .route("/__md_tool/file/{encoded_path}", get(local_file))
         .route("/close", post(close_preview))
         .route("/scroll", post(scroll))
         .route("/update", post(update))
@@ -252,13 +269,16 @@ async fn health() -> impl IntoResponse {
 
 async fn capabilities() -> Json<Capabilities> {
     Json(Capabilities {
-        protocol_version: 2,
-        features: &["render", "scroll", "close"],
+        protocol_version: 3,
+        features: &["render", "scroll", "close", "local_file_assets"],
     })
 }
 
-async fn update(State(state): State<SharedState>, markdown_input: String) -> impl IntoResponse {
-    match state.apply_markdown_update(markdown_input).await {
+async fn update(
+    State(state): State<SharedState>,
+    Json(request): Json<UpdateRequest>,
+) -> impl IntoResponse {
+    match state.apply_markdown_update(request).await {
         UpdateOutcome::Unchanged => {
             debug!("skipped unchanged markdown update");
             StatusCode::NO_CONTENT
@@ -272,6 +292,39 @@ async fn update(State(state): State<SharedState>, markdown_input: String) -> imp
             StatusCode::OK
         }
     }
+}
+
+async fn local_file(AxumPath(encoded_path): AxumPath<String>) -> Response {
+    let Some(path) = decode_hex_path(&encoded_path).map(PathBuf::from) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+
+    let metadata = match fs::metadata(&path).await {
+        Ok(metadata) if metadata.is_file() => metadata,
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let bytes = match fs::read(&path).await {
+        Ok(bytes) => bytes,
+        Err(_) => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let mut response = Response::new(Body::from(bytes));
+    *response.status_mut() = StatusCode::OK;
+
+    let headers = response.headers_mut();
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static(content_type_for_path(&path)),
+    );
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(
+        header::CONTENT_LENGTH,
+        HeaderValue::from_str(&metadata.len().to_string())
+            .unwrap_or_else(|_| HeaderValue::from_static("0")),
+    );
+
+    response
 }
 
 async fn scroll(
@@ -311,6 +364,60 @@ fn scroll_event(scroll: ScrollState) -> Arc<str> {
         winheight: scroll.winheight,
         winline: scroll.winline,
     })
+}
+
+fn decode_hex_path(value: &str) -> Option<String> {
+    if value.len() % 2 != 0 {
+        return None;
+    }
+
+    let mut bytes = Vec::with_capacity(value.len() / 2);
+    let mut index = 0;
+    while index < value.len() {
+        let next = index + 2;
+        let byte = u8::from_str_radix(&value[index..next], 16).ok()?;
+        bytes.push(byte);
+        index = next;
+    }
+
+    String::from_utf8(bytes).ok()
+}
+
+fn content_type_for_path(path: &Path) -> &'static str {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+
+    if extension.eq_ignore_ascii_case("png") {
+        return "image/png";
+    }
+    if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
+        return "image/jpeg";
+    }
+    if extension.eq_ignore_ascii_case("gif") {
+        return "image/gif";
+    }
+    if extension.eq_ignore_ascii_case("webp") {
+        return "image/webp";
+    }
+    if extension.eq_ignore_ascii_case("svg") {
+        return "image/svg+xml";
+    }
+    if extension.eq_ignore_ascii_case("bmp") {
+        return "image/bmp";
+    }
+    if extension.eq_ignore_ascii_case("ico") {
+        return "image/x-icon";
+    }
+    if extension.eq_ignore_ascii_case("tif") || extension.eq_ignore_ascii_case("tiff") {
+        return "image/tiff";
+    }
+    if extension.eq_ignore_ascii_case("avif") {
+        return "image/avif";
+    }
+
+    "application/octet-stream"
 }
 
 async fn shutdown_signal() {

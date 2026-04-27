@@ -307,6 +307,48 @@ return {
 				echo_url = true,
 			},
 
+			upload = {
+				-- [CN] 临时文件目录；在线图片下载和需要重命名的本地图片会先放到这里再交给 PicGo。
+				-- [CN] 可选值: 空字符串表示自动使用 `stdpath("cache") .. "/md-tool/upload"`；或任意可写目录路径。
+				-- [EN] Temporary directory for remote downloads and staged local files before PicGo uploads them.
+				-- [EN] Choices: empty string for `stdpath("cache") .. "/md-tool/upload"`; or any writable directory path.
+				temp_dir = "",
+
+				-- [CN] 上传前使用的文件名规则。
+				-- [CN] 可选值: `nil` = 保留原文件名；字符串模板；或 `function(ctx) return "..." end`。
+				-- [CN] 模板支持 `{origin}`、`{y}`、`{m}`、`{d}`、`{h}`、`{i}`、`{s}`、`{timestamp}`、`{rand}`。
+				-- [EN] Filename rule applied before upload.
+				-- [EN] Choices: `nil` to keep the original name; a template string; or `function(ctx) return "..." end`.
+				-- [EN] Template tokens include `{origin}`, `{y}`, `{m}`, `{d}`, `{h}`, `{i}`, `{s}`, `{timestamp}`, and `{rand}`.
+				filename = nil,
+
+				picgo = {
+					-- [CN] PicGo CLI 可执行文件。
+					-- [CN] 可选值: `"picgo"` 或任意可执行文件路径。
+					-- [EN] PicGo CLI executable.
+					-- [EN] Choices: `"picgo"` or any executable path.
+					command = "picgo",
+
+					-- [CN] 追加给 PicGo 的全局参数，会放在 `u` 子命令之前。
+					-- [CN] 可选值: 字符串数组，例如 `{ "-d" }`。
+					-- [EN] Extra global PicGo CLI arguments inserted before the `u` subcommand.
+					-- [EN] Choices: list of strings, for example `{ "-d" }`.
+					args = {},
+
+					-- [CN] 已有 PicGo 配置文件路径；为空时使用 PicGo 默认路径。
+					-- [CN] 可选值: `nil` 或任意配置文件路径。
+					-- [EN] Existing PicGo config-file path; when unset, PicGo falls back to its own default path.
+					-- [EN] Choices: `nil` or any config-file path.
+					config_path = nil,
+
+					-- [CN] 也可以直接把 PicGo 配置写在这里；插件会临时编码成 JSON 传给 `picgo -c ...`。
+					-- [CN] 可选值: `nil` 或任意 Lua 表。
+					-- [EN] You can also inline the PicGo config here; the plugin encodes it to a temporary JSON file for `picgo -c ...`.
+					-- [EN] Choices: `nil` or any Lua table.
+					config = nil,
+				},
+			},
+
 			table = {
 				-- [CN] 是否默认启用 table mode。
 				-- [CN] 开启后会为 Markdown buffer 注册表格编辑辅助，并在编辑当前表格时自动格式化。

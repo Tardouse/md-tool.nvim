@@ -6,6 +6,7 @@ Current implementation highlights:
 
 - Treesitter-driven in-editor render with decorated headings, lists, quotes, callouts, tables, code fences, and thematic breaks
 - Browser preview with auto browser detection, manual browser commands, and echo-only mode
+- PicGo-powered image upload for local files and existing remote image links
 - Current-table formatting with optional auto-align and format-on-save
 - TOC generation and update using fenced markers
 - Conservative smart `<CR>` continuation for Markdown lists
@@ -67,6 +68,10 @@ By default, table mode is off on newly opened buffers. If you want it enabled au
 
 - `MDTtocGen`
 - `MDTtocUpdate`
+
+### Upload
+
+- `MDTupload`
 
 ### List
 
@@ -137,6 +142,17 @@ require("md-tool").setup({
     echo_url = true,
   },
 
+  upload = {
+    temp_dir = "",
+    filename = nil,
+    picgo = {
+      command = "picgo",
+      args = {},
+      config_path = nil,
+      config = nil,
+    },
+  },
+
   table = {
     enabled = false,
     auto_align = false,
@@ -172,9 +188,36 @@ Key option notes:
 - `preview.auto_open` accepts `true`, `false`, or `"auto"`.
 - `preview.browser` accepts `"auto"`, `"echo"`, or a custom command string. Custom commands may include `%s` as the URL placeholder.
 - `preview.log_level` accepts `"trace"`, `"debug"`, `"info"`, `"warn"`, or `"error"`.
+- `upload.filename` accepts `nil`, a template string, or a Lua function. Template tokens include `{origin}`, `{y}`, `{m}`, `{d}`, `{h}`, `{i}`, `{s}`, `{timestamp}`, and `{rand}`.
+- `upload.picgo.command` points at the PicGo CLI executable. `upload.picgo.args` appends extra global CLI flags before `u`.
+- `upload.picgo.config_path` reuses an existing PicGo config file, while `upload.picgo.config` lets you pass an inline Lua table that is encoded to a temporary JSON config at upload time.
 - `toc.list_marker` accepts `"-"`, `"*"`, or `"+"`.
 - `render.link.icon`, `render.link.wikilink_icon`, and `render.link.image_icon` control the inline prefixes used for rendered links.
 - `table.auto_align` is still a reserved/validated field and is not consumed by the current implementation yet.
+
+## Image Upload
+
+Run `:MDTupload` with the cursor anywhere inside a Markdown image like `![alt](./image.png)` or `![alt](https://example.com/a.png)`.
+
+- Local image destinations are uploaded through PicGo and then replaced with the returned image-bed URL.
+- Remote image destinations are first downloaded into a temporary file and then uploaded through the same PicGo flow.
+- The destination part of the Markdown image is replaced in place, so titles and alt text stay untouched.
+
+Example configuration:
+
+```lua
+require("md-tool").setup({
+  upload = {
+    filename = "{origin}-{y}{m}{d}{h}{i}{s}",
+    picgo = {
+      command = "picgo",
+      config_path = vim.fn.expand("~/.picgo/config.json"),
+    },
+  },
+})
+```
+
+If you prefer to keep PicGo fully inside the plugin config, you can also provide `upload.picgo.config = { ... }` as a Lua table. That table is written to a temporary JSON file beside `upload.picgo.config_path`, or beside PicGo's default `~/.picgo/config.json` when `config_path` is unset, so PicGo can still discover installed plugins from the adjacent `node_modules`. Avoid committing secrets directly into a public dotfiles repo.
 
 ## Preview Server
 

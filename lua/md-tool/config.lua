@@ -68,6 +68,16 @@ local defaults = {
     browser = "auto",
     echo_url = true,
   },
+  upload = {
+    temp_dir = "",
+    filename = nil,
+    picgo = {
+      command = "picgo",
+      args = {},
+      config_path = nil,
+      config = nil,
+    },
+  },
   table = {
     enabled = false,
     auto_align = false,
@@ -108,6 +118,12 @@ local function validate_string(name, value)
   end
 end
 
+local function validate_optional_string(name, value)
+  if value ~= nil and type(value) ~= "string" then
+    error(("md-tool: `%s` must be a string when set."):format(name))
+  end
+end
+
 local function validate_boolean(name, value)
   if type(value) ~= "boolean" then
     error(("md-tool: `%s` must be a boolean."):format(name))
@@ -141,6 +157,34 @@ end
 local function validate_positive_number(name, value)
   if type(value) ~= "number" or value <= 0 then
     error(("md-tool: `%s` must be a positive number."):format(name))
+  end
+end
+
+local function validate_optional_string_list(name, value)
+  if value == nil then
+    return
+  end
+
+  if type(value) ~= "table" then
+    error(("md-tool: `%s` must be a list of strings when set."):format(name))
+  end
+
+  for _, entry in ipairs(value) do
+    if type(entry) ~= "string" then
+      error(("md-tool: `%s` must be a list of strings when set."):format(name))
+    end
+  end
+end
+
+local function validate_optional_table(name, value)
+  if value ~= nil and type(value) ~= "table" then
+    error(("md-tool: `%s` must be a table when set."):format(name))
+  end
+end
+
+local function validate_string_or_function_or_nil(name, value)
+  if value ~= nil and type(value) ~= "string" and type(value) ~= "function" then
+    error(("md-tool: `%s` must be a string, function, or nil."):format(name))
   end
 end
 
@@ -213,6 +257,13 @@ local function validate(opts)
   if not vim.tbl_contains({ "trace", "debug", "info", "warn", "error" }, opts.preview.log_level) then
     error('md-tool: `preview.log_level` must be one of "trace", "debug", "info", "warn", "error".')
   end
+
+  validate_optional_string("upload.temp_dir", opts.upload.temp_dir)
+  validate_string_or_function_or_nil("upload.filename", opts.upload.filename)
+  validate_string("upload.picgo.command", opts.upload.picgo.command)
+  validate_optional_string_list("upload.picgo.args", opts.upload.picgo.args)
+  validate_optional_string("upload.picgo.config_path", opts.upload.picgo.config_path)
+  validate_optional_table("upload.picgo.config", opts.upload.picgo.config)
 
   validate_boolean("table.enabled", opts.table.enabled)
   validate_boolean("table.auto_align", opts.table.auto_align)

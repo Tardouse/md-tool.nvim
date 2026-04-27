@@ -3,6 +3,7 @@ local preview = require("md-tool.preview")
 local render = require("md-tool.render")
 local table_module = require("md-tool.table")
 local toc = require("md-tool.toc")
+local upload = require("md-tool.upload")
 
 local M = {
   registered = false,
@@ -51,6 +52,10 @@ function M.register()
   end, {})
   vim.api.nvim_create_user_command("MDTtocUpdate", function()
     toc.update()
+  end, {})
+
+  vim.api.nvim_create_user_command("MDTupload", function()
+    upload.upload_cursor_image()
   end, {})
 
   vim.api.nvim_create_user_command("MDTlistToggle", function()

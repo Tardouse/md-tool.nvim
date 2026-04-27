@@ -301,7 +301,7 @@ local function check_server_compatibility(callback)
       end
 
       local ok, decoded = pcall(vim.json.decode, body)
-      if not ok or type(decoded) ~= "table" or decoded.protocol_version ~= 2 then
+      if not ok or type(decoded) ~= "table" or decoded.protocol_version ~= 3 then
         callback(("Incompatible preview server is already running at %s. Stop the old server or restart Neovim."):format(
           build_server_url()
         ))
@@ -713,13 +713,19 @@ function M.refresh(bufnr, opts)
     end
 
     local markdown = table.concat(utils.get_buf_lines(bufnr), "\n")
+    local buffer_name = vim.api.nvim_buf_get_name(bufnr)
+    local base_dir = buffer_name ~= "" and vim.fs.dirname(buffer_name) or vim.fn.getcwd()
+    local payload = vim.json.encode({
+      markdown = markdown,
+      base_dir = base_dir,
+    })
 
     state.set_preview(bufnr, {
       inflight = true,
       url = url,
     })
 
-    http_request("POST", "/update", markdown, function(post_err, status)
+    http_request("POST", "/update", payload, { content_type = "application/json; charset=utf-8" }, function(post_err, status)
       vim.schedule(function()
         if not vim.api.nvim_buf_is_valid(bufnr) then
           return
