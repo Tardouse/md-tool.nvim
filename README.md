@@ -13,6 +13,8 @@ Current implementation highlights:
 
 Neovim `0.11.6+` is the supported baseline. The render module requires Treesitter parsers for `markdown` and `markdown_inline`.
 
+![md-tool.nvim preview side by side](docs/preview-side-by-side.png)
+
 ## Installation
 
 ### Lazy.nvim
