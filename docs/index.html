@@ -1,0 +1,1106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>md-tool.nvim | Markdown workflow for Neovim</title>
+  <meta
+    name="description"
+    content="md-tool.nvim brings preview, PicGo upload, TOC, table editing, list continuation, and in-editor rendering into one Markdown workflow for Neovim."
+  />
+  <meta name="theme-color" content="#10151c" />
+  <meta property="og:title" content="md-tool.nvim" />
+  <meta
+    property="og:description"
+    content="A unified Markdown workflow for Neovim: preview, upload, TOC, tables, lists, and rendering."
+  />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="preview-side-by-side.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&amp;family=IBM+Plex+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    :root {
+      --bg: #0b1016;
+      --bg-soft: #111925;
+      --panel: rgba(17, 25, 37, 0.78);
+      --panel-strong: rgba(19, 29, 43, 0.95);
+      --line: rgba(222, 194, 158, 0.14);
+      --line-strong: rgba(222, 194, 158, 0.28);
+      --text: #edf2f7;
+      --muted: #98a6b8;
+      --warm: #e49b57;
+      --warm-2: #f2c185;
+      --aqua: #7ecad3;
+      --shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
+      --radius-xl: 28px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --content: min(1180px, calc(100vw - 32px));
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 10% 10%, rgba(228, 155, 87, 0.16), transparent 28%),
+        radial-gradient(circle at 85% 12%, rgba(126, 202, 211, 0.12), transparent 24%),
+        linear-gradient(180deg, #111821 0%, #090d13 48%, #0b1016 100%);
+      font: 16px/1.65 "IBM Plex Sans", sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.4), transparent 75%);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    code,
+    pre {
+      font-family: "JetBrains Mono", monospace;
+    }
+
+    .page-shell {
+      position: relative;
+      isolation: isolate;
+    }
+
+    .container {
+      width: var(--content);
+      margin: 0 auto;
+    }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(16px);
+      background: rgba(8, 12, 19, 0.7);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .site-header__inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      min-height: 72px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    .brand__mark {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      border-radius: 14px;
+      background:
+        linear-gradient(145deg, rgba(228, 155, 87, 0.22), rgba(126, 202, 211, 0.18)),
+        var(--panel-strong);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.95rem;
+      color: var(--warm-2);
+    }
+
+    .brand__text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .brand__name {
+      font-size: 0.98rem;
+    }
+
+    .brand__meta {
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .nav a {
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      font-weight: 600;
+      border-radius: 999px;
+      transition: color 160ms ease, background 160ms ease;
+    }
+
+    .nav a:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .hero {
+      padding: 78px 0 38px;
+    }
+
+    .hero__grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.03fr) minmax(360px, 0.97fr);
+      gap: 42px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--warm-2);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: linear-gradient(180deg, var(--warm-2), var(--warm));
+      box-shadow: 0 0 18px rgba(228, 155, 87, 0.5);
+    }
+
+    .hero h1 {
+      margin: 22px 0 18px;
+      font-family: "Fraunces", serif;
+      font-size: clamp(3rem, 6vw, 5.2rem);
+      line-height: 0.94;
+      letter-spacing: -0.04em;
+      max-width: 10.3em;
+    }
+
+    .hero__lead {
+      margin: 0 0 12px;
+      max-width: 42rem;
+      color: #dbe3ec;
+      font-size: 1.1rem;
+    }
+
+    .hero__sublead {
+      margin: 0;
+      max-width: 41rem;
+      color: var(--muted);
+      font-size: 0.98rem;
+    }
+
+    .hero__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin: 28px 0 22px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 0 18px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-weight: 700;
+      font-size: 0.95rem;
+      transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+    }
+
+    .button--primary {
+      color: #10151c;
+      background: linear-gradient(135deg, var(--warm-2), var(--warm));
+      box-shadow: 0 16px 36px rgba(228, 155, 87, 0.22);
+    }
+
+    .button--ghost {
+      border-color: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+    }
+
+    .hero__chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .chip {
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+      color: #cbd6e2;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+
+    .hero-panel {
+      position: relative;
+      padding: 18px;
+      border-radius: var(--radius-xl);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+        rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-panel::before,
+    .hero-panel::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(28px);
+      opacity: 0.52;
+      z-index: -1;
+    }
+
+    .hero-panel::before {
+      width: 170px;
+      height: 170px;
+      top: -30px;
+      right: -24px;
+      background: rgba(228, 155, 87, 0.22);
+    }
+
+    .hero-panel::after {
+      width: 130px;
+      height: 130px;
+      bottom: -22px;
+      left: -18px;
+      background: rgba(126, 202, 211, 0.18);
+    }
+
+    .hero-panel__meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .hero-panel__live {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #bfded9;
+    }
+
+    .hero-panel__live::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #5bc7af;
+      box-shadow: 0 0 18px rgba(91, 199, 175, 0.45);
+    }
+
+    .hero-panel img {
+      width: 100%;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.28);
+    }
+
+    .hero-panel__footer {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .mini-stat {
+      padding: 14px;
+      border-radius: var(--radius-md);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .mini-stat strong {
+      display: block;
+      font-size: 1.15rem;
+      color: var(--warm-2);
+    }
+
+    .mini-stat span {
+      color: var(--muted);
+      font-size: 0.83rem;
+    }
+
+    .section {
+      padding: 44px 0;
+    }
+
+    .section__header {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+
+    .section__eyebrow {
+      color: var(--aqua);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .section h2 {
+      margin: 0;
+      font-family: "Fraunces", serif;
+      font-size: clamp(2rem, 3.4vw, 3rem);
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .section__text {
+      margin: 0;
+      max-width: 46rem;
+      color: var(--muted);
+      font-size: 1rem;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .feature-card {
+      position: relative;
+      overflow: hidden;
+      padding: 22px;
+      border-radius: var(--radius-lg);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.03)),
+        var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: var(--shadow);
+    }
+
+    .feature-card::after {
+      content: "";
+      position: absolute;
+      inset: auto -10% -55% auto;
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      background: linear-gradient(180deg, rgba(228, 155, 87, 0.18), rgba(126, 202, 211, 0.06));
+      filter: blur(18px);
+      pointer-events: none;
+    }
+
+    .feature-card__index {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 42px;
+      height: 42px;
+      border-radius: 14px;
+      background: rgba(228, 155, 87, 0.12);
+      color: var(--warm-2);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .feature-card h3 {
+      margin: 18px 0 10px;
+      font-size: 1.14rem;
+      line-height: 1.2;
+    }
+
+    .feature-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+    }
+
+    .workflow-rail,
+    .workflow-panel {
+      border-radius: var(--radius-xl);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+        var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: var(--shadow);
+    }
+
+    .workflow-rail {
+      padding: 26px;
+    }
+
+    .workflow-step {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 16px;
+      padding: 18px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .workflow-step:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .workflow-step:first-child {
+      padding-top: 0;
+    }
+
+    .workflow-step__count {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: rgba(126, 202, 211, 0.14);
+      color: var(--aqua);
+      font-family: "JetBrains Mono", monospace;
+      font-weight: 700;
+    }
+
+    .workflow-step h3 {
+      margin: 0 0 6px;
+      font-size: 1.02rem;
+    }
+
+    .workflow-step p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .workflow-panel {
+      padding: 24px;
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+
+    .workflow-panel__title {
+      margin: 0;
+      font-size: 1.1rem;
+    }
+
+    .workflow-panel__blurb {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .workflow-panel pre {
+      margin: 0;
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(6, 9, 14, 0.8);
+      color: #dfebf4;
+      overflow-x: auto;
+      font-size: 0.9rem;
+      line-height: 1.65;
+    }
+
+    .command-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .command-card {
+      padding: 22px;
+      border-radius: var(--radius-lg);
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .command-card h3 {
+      margin: 0 0 10px;
+      font-size: 1.03rem;
+    }
+
+    .command-card p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .command-card ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .command-card li {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      color: #dbe3ec;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.84rem;
+      overflow-wrap: anywhere;
+    }
+
+    .cta {
+      padding: 52px 0 84px;
+    }
+
+    .cta-panel {
+      padding: 30px;
+      border-radius: 30px;
+      background:
+        linear-gradient(135deg, rgba(228, 155, 87, 0.18), rgba(126, 202, 211, 0.12)),
+        rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 22px;
+      align-items: center;
+    }
+
+    .cta-panel h2 {
+      margin: 0 0 10px;
+      font-family: "Fraunces", serif;
+      font-size: clamp(2rem, 3.2vw, 2.7rem);
+      line-height: 1;
+    }
+
+    .cta-panel p {
+      margin: 0;
+      color: #d8e0e9;
+      max-width: 42rem;
+    }
+
+    .footer {
+      padding: 0 0 36px;
+    }
+
+    .footer__inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    [data-reveal] {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 500ms ease, transform 500ms ease;
+    }
+
+    [data-reveal].is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      * {
+        animation: none !important;
+        transition: none !important;
+      }
+
+      [data-reveal] {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    @media (max-width: 1080px) {
+      .hero__grid,
+      .workflow,
+      .cta-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .feature-grid,
+      .command-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .hero {
+        padding-top: 56px;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .site-header__inner,
+      .footer__inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .nav {
+        justify-content: flex-start;
+      }
+
+      .feature-grid,
+      .command-grid,
+      .hero-panel__footer {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h1 {
+        font-size: clamp(2.5rem, 15vw, 3.6rem);
+      }
+
+      .workflow-step {
+        grid-template-columns: 1fr;
+      }
+
+      .workflow-step__count {
+        margin-bottom: -4px;
+      }
+
+      .hero-panel,
+      .workflow-rail,
+      .workflow-panel,
+      .cta-panel,
+      .feature-card,
+      .command-card {
+        padding: 18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="site-header">
+      <div class="container site-header__inner">
+        <a class="brand" href="#top">
+          <span class="brand__mark">md</span>
+          <span class="brand__text">
+            <span class="brand__name">md-tool.nvim</span>
+            <span class="brand__meta">One Markdown workflow for Neovim</span>
+          </span>
+        </a>
+        <nav class="nav">
+          <a href="#features">Features</a>
+          <a href="#workflow">Workflow</a>
+          <a href="#install">Install</a>
+          <a href="#commands">Commands</a>
+          <a href="https://github.com/Tardouse/md-tool.nvim" target="_blank" rel="noreferrer">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="container hero__grid">
+          <div data-reveal>
+            <div class="eyebrow">Markdown workflow for Neovim</div>
+            <h1>Preview, render, upload, format, and ship from one plugin.</h1>
+            <p class="hero__lead">
+              md-tool.nvim brings live preview, PicGo image upload, TOC generation, table editing,
+              list continuation, and in-editor Markdown rendering under one command prefix and one
+              configuration model.
+            </p>
+            <p class="hero__sublead">
+              For users who are tired of stitching together five plugins just to make Markdown feel
+              complete. Also includes a full Chinese README for setup details and option notes.
+            </p>
+            <div class="hero__actions">
+              <a class="button button--primary" href="https://github.com/Tardouse/md-tool.nvim" target="_blank" rel="noreferrer">Open the repository</a>
+              <a class="button button--ghost" href="#install">See installation</a>
+              <a class="button button--ghost" href="https://github.com/Tardouse/md-tool.nvim/blob/main/docs/README_CN.md" target="_blank" rel="noreferrer">Read Chinese docs</a>
+            </div>
+            <div class="hero__chips">
+              <span class="chip">Neovim 0.11.6+</span>
+              <span class="chip">Tree-sitter rendering</span>
+              <span class="chip">Rust preview service</span>
+              <span class="chip">PicGo image upload</span>
+              <span class="chip">Single command prefix</span>
+            </div>
+          </div>
+
+          <div class="hero-panel" data-reveal>
+            <div class="hero-panel__meta">
+              <span>Preview in context</span>
+              <span class="hero-panel__live">live browser sync</span>
+            </div>
+            <img src="preview-side-by-side.png" alt="md-tool.nvim side-by-side Neovim and browser preview" />
+            <div class="hero-panel__footer">
+              <div class="mini-stat">
+                <strong>6</strong>
+                <span>workflow modules</span>
+              </div>
+              <div class="mini-stat">
+                <strong>1</strong>
+                <span>command namespace</span>
+              </div>
+              <div class="mini-stat">
+                <strong>0</strong>
+                <span>plugin pileup required</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="container">
+          <div class="section__header" data-reveal>
+            <div class="section__eyebrow">Why it feels cohesive</div>
+            <h2>One prefix. Shared config. No fragmented Markdown stack.</h2>
+            <p class="section__text">
+              md-tool.nvim is opinionated about workflow shape: the features are meant to fit
+              together, not compete with each other. Preview, editing helpers, and rendering all
+              live behind the same mental model.
+            </p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature-card" data-reveal>
+              <div class="feature-card__index">01</div>
+              <h3>Live preview with a local Rust service</h3>
+              <p>
+                Push raw Markdown from Neovim, render it through pulldown-cmark, and keep browser
+                clients in sync over WebSocket updates with scroll synchronization.
+              </p>
+            </article>
+
+            <article class="feature-card" data-reveal>
+              <div class="feature-card__index">02</div>
+              <h3>PicGo upload from local or remote images</h3>
+              <p>
+                Run <code>:MDTupload</code> on a Markdown image link, upload through PicGo, and
+                replace the destination in place without disturbing alt text or titles.
+              </p>
+            </article>
+
+            <article class="feature-card" data-reveal>
+              <div class="feature-card__index">03</div>
+              <h3>Tree-sitter rendering inside the editor</h3>
+              <p>
+                Decorate headings, bullets, task lists, code fences, links, images, callouts, and
+                tables without touching the original Markdown source.
+              </p>
+            </article>
+
+            <article class="feature-card" data-reveal>
+              <div class="feature-card__index">04</div>
+              <h3>Table editing that stays out of the way</h3>
+              <p>
+                Enable buffer-local table mode when you want it, auto-align the active table, and
+                get practical insert-mode helpers for pipes and row creation.
+              </p>
+            </article>
+
+            <article class="feature-card" data-reveal>
+              <div class="feature-card__index">05</div>
+              <h3>Conservative list continuation</h3>
+              <p>
+                Continue Markdown lists, task items, and indentation where it makes sense, while
+                deliberately avoiding the noisy behavior that often makes other list plugins tiring.
+              </p>
+            </article>
+
+            <article class="feature-card" data-reveal>
+              <div class="feature-card__index">06</div>
+              <h3>TOC generation with fenced markers</h3>
+              <p>
+                Generate or update a single TOC block using predictable markers, frontmatter-aware
+                placement, and a command set that behaves consistently.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="workflow">
+        <div class="container">
+          <div class="section__header" data-reveal>
+            <div class="section__eyebrow">Workflow</div>
+            <h2>Designed around the actual writing loop.</h2>
+            <p class="section__text">
+              The plugin is strongest when used as a loop rather than a checkbox list: write in
+              Neovim, preview instantly, upload assets when needed, and keep structure under
+              control without context switching.
+            </p>
+          </div>
+
+          <div class="workflow">
+            <div class="workflow-rail" data-reveal>
+              <div class="workflow-step">
+                <div class="workflow-step__count">1</div>
+                <div>
+                  <h3>Write in raw Markdown</h3>
+                  <p>Keep the original text readable while enhanced rendering removes visual noise inside Neovim.</p>
+                </div>
+              </div>
+              <div class="workflow-step">
+                <div class="workflow-step__count">2</div>
+                <div>
+                  <h3>Preview without leaving your editor rhythm</h3>
+                  <p>The browser mirrors the current buffer through a lightweight local service, including local image paths.</p>
+                </div>
+              </div>
+              <div class="workflow-step">
+                <div class="workflow-step__count">3</div>
+                <div>
+                  <h3>Upload images at the link site</h3>
+                  <p>Use PicGo exactly where the Markdown image already exists, instead of jumping to a separate asset pipeline.</p>
+                </div>
+              </div>
+              <div class="workflow-step">
+                <div class="workflow-step__count">4</div>
+                <div>
+                  <h3>Clean structure as you go</h3>
+                  <p>Tables, lists, and TOC updates stay close to editing, so maintenance does not become a separate task later.</p>
+                </div>
+              </div>
+            </div>
+
+            <aside class="workflow-panel" data-reveal>
+              <h3 class="workflow-panel__title">Minimal install, full workflow</h3>
+              <p class="workflow-panel__blurb">
+                Tagged releases can fetch a prebuilt preview binary automatically. In local
+                development, the plugin also detects <code>target/release/md-tool-preview</code>.
+              </p>
+              <pre><code>{
+  "Tardouse/md-tool.nvim",
+  ft = { "markdown" },
+  dependencies = { "nvim-treesitter/nvim-treesitter" },
+  build = function(plugin)
+    dofile(plugin.dir .. "/lua/md-tool/install.lua").build(plugin.dir)
+  end,
+  opts = {},
+}</code></pre>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="install">
+        <div class="container">
+          <div class="section__header" data-reveal>
+            <div class="section__eyebrow">Setup</div>
+            <h2>Simple installation, deeper configuration when you need it.</h2>
+            <p class="section__text">
+              The default path is intentionally short. Full option commentary lives in the example
+              config and bilingual README files in the repository.
+            </p>
+          </div>
+
+          <div class="workflow">
+            <aside class="workflow-panel" data-reveal>
+              <h3 class="workflow-panel__title">Key defaults</h3>
+              <p class="workflow-panel__blurb">
+                Preview, rendering, TOC, and list continuation are enabled by default. Table mode
+                remains opt-in on new buffers, which keeps the default footprint conservative.
+              </p>
+              <pre><code>require("md-tool").setup({
+  preview = {
+    binary = "auto",
+    auto_open = "auto",
+  },
+  upload = {
+    picgo = {
+      command = "picgo",
+    },
+  },
+})</code></pre>
+            </aside>
+
+            <div class="workflow-rail" data-reveal>
+              <div class="workflow-step">
+                <div class="workflow-step__count">A</div>
+                <div>
+                  <h3>Examples included</h3>
+                  <p>The repository ships minimal and fully annotated examples for lazy.nvim and packer.nvim.</p>
+                </div>
+              </div>
+              <div class="workflow-step">
+                <div class="workflow-step__count">B</div>
+                <div>
+                  <h3>Release-friendly preview binary</h3>
+                  <p>Tagged installs prefer GitHub release assets before falling back to a local Cargo build.</p>
+                </div>
+              </div>
+              <div class="workflow-step">
+                <div class="workflow-step__count">C</div>
+                <div>
+                  <h3>PicGo can stay external or inline</h3>
+                  <p>Use an existing PicGo config file or provide the config table directly in plugin setup.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="commands">
+        <div class="container">
+          <div class="section__header" data-reveal>
+            <div class="section__eyebrow">Command surface</div>
+            <h2>Easy to remember because the namespace stays flat.</h2>
+            <p class="section__text">
+              Every module lives under the same <code>MDT</code> prefix, so the plugin reads like a
+              single tool instead of a bag of unrelated features.
+            </p>
+          </div>
+
+          <div class="command-grid">
+            <article class="command-card" data-reveal>
+              <h3>Preview</h3>
+              <p>Open, close, and keep a browser mirror in sync.</p>
+              <ul>
+                <li>MDTpriviewToggle</li>
+                <li>MDTpriviewEnable</li>
+                <li>MDTpriviewDisable</li>
+              </ul>
+            </article>
+
+            <article class="command-card" data-reveal>
+              <h3>Editing helpers</h3>
+              <p>Format tables and keep list continuation predictable.</p>
+              <ul>
+                <li>MDTtableToggle</li>
+                <li>MDTtableFormat</li>
+                <li>MDTlistToggle</li>
+              </ul>
+            </article>
+
+            <article class="command-card" data-reveal>
+              <h3>Structure and assets</h3>
+              <p>Update TOC blocks and upload images without leaving Markdown.</p>
+              <ul>
+                <li>MDTtocGen</li>
+                <li>MDTtocUpdate</li>
+                <li>MDTupload</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="cta">
+        <div class="container">
+          <div class="cta-panel" data-reveal>
+            <div>
+              <h2>Make Markdown in Neovim feel like a product, not a workaround.</h2>
+              <p>
+                Explore the repository, read the bilingual docs, grab a tagged release, and turn
+                your Markdown setup into one coherent workflow.
+              </p>
+            </div>
+            <div class="hero__actions">
+              <a class="button button--primary" href="https://github.com/Tardouse/md-tool.nvim" target="_blank" rel="noreferrer">View on GitHub</a>
+              <a class="button button--ghost" href="https://github.com/Tardouse/md-tool.nvim/releases" target="_blank" rel="noreferrer">Releases</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer__inner">
+        <span>md-tool.nvim</span>
+        <span>Preview, upload, TOC, tables, lists, and rendering for Markdown in Neovim.</span>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const revealItems = document.querySelectorAll("[data-reveal]");
+
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("is-visible");
+              observer.unobserve(entry.target);
+            }
+          }
+        },
+        { rootMargin: "0px 0px -8% 0px", threshold: 0.14 }
+      );
+
+      for (const item of revealItems) {
+        observer.observe(item);
+      }
+    } else {
+      for (const item of revealItems) {
+        item.classList.add("is-visible");
+      }
+    }
+  </script>
+</body>
+</html>
