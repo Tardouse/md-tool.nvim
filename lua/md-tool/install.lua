@@ -162,20 +162,28 @@ local function release_tag(root)
   end
 
   if not command_exists("git") then
-    return nil, "git not found"
+    return "latest"
   end
 
   local ok, result = run({ "git", "-C", root, "describe", "--tags", "--exact-match", "HEAD" })
   if not ok then
-    return nil, "current checkout is not on an exact git tag"
+    return "latest"
   end
 
   local tag = trim(result.stdout)
   if tag == "" then
-    return nil, "current checkout is not on an exact git tag"
+    return "latest"
   end
 
   return tag
+end
+
+local function release_download_url(repo, tag, archive_name)
+  if tag == "latest" then
+    return ("https://github.com/%s/releases/latest/download/%s"):format(repo, archive_name)
+  end
+
+  return ("https://github.com/%s/releases/download/%s/%s"):format(repo, tag, archive_name)
 end
 
 local function temp_path(suffix)
@@ -295,7 +303,7 @@ local function install_from_release(root)
 
   local archive_name = release_archive_name(target)
   local repo = github_repo_slug(root)
-  local url = ("https://github.com/%s/releases/download/%s/%s"):format(repo, tag, archive_name)
+  local url = release_download_url(repo, tag, archive_name)
   local archive_path = temp_path(archive_name:match("%.zip$") and ".zip" or ".tar.gz")
   local extract_dir = temp_path(".md-tool-preview")
 
