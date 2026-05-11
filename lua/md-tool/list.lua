@@ -88,6 +88,66 @@ local function same_ordered_prefix(line, indent, quote)
   return line:match("^" .. prefix .. "%d+[.)]%s+")
 end
 
+local function renumber_ordered_line(bufnr, row)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+
+  local line = vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1]
+  if not line then
+    return
+  end
+
+  local indent, rest = line:match("^(%s*)(.*)$")
+  local quote, body = parse_quote_prefix(rest)
+  local number_str, delim = body:match("^(%d+)([.)])")
+  if not number_str then
+    return
+  end
+
+  local target_indent_len = #indent
+  local new_number = 1
+
+  for r = row - 1, 1, -1 do
+    local prev_line = vim.api.nvim_buf_get_lines(bufnr, r - 1, r, false)[1]
+    if not prev_line or vim.trim(prev_line) == "" then
+      break
+    end
+
+    local prev_indent = prev_line:match("^(%s*)") or ""
+    if #prev_indent < target_indent_len then
+      break
+    end
+
+    if #prev_indent == target_indent_len then
+      local prev_rest = prev_line:sub(#prev_indent + 1)
+      local _, prev_body = parse_quote_prefix(prev_rest)
+      local prev_number, prev_delim = prev_body:match("^(%d+)([.)])")
+      if prev_number and prev_delim == delim then
+        new_number = tonumber(prev_number) + 1
+      end
+      break
+    end
+  end
+
+  if tonumber(number_str) == new_number then
+    return
+  end
+
+  local prefix_len = #indent + #quote
+  local new_line = line:sub(1, prefix_len) .. tostring(new_number) .. line:sub(prefix_len + #number_str + 1)
+  vim.api.nvim_buf_set_lines(bufnr, row - 1, row, false, { new_line })
+
+  local winid = vim.api.nvim_get_current_win()
+  if vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == bufnr then
+    local cur_pos = vim.api.nvim_win_get_cursor(winid)
+    if cur_pos[1] == row then
+      local diff = #tostring(new_number) - #number_str
+      pcall(vim.api.nvim_win_set_cursor, winid, { row, math.max(0, cur_pos[2] + diff) })
+    end
+  end
+end
+
 local function newline_preserves_indent(bufnr)
   return vim.bo[bufnr].autoindent
     or vim.bo[bufnr].smartindent
@@ -300,8 +360,19 @@ function M.expr_tab()
   end
 
   local line = vim.api.nvim_get_current_line()
-  if line:find("|", 1, true) or not parse_list_line(line) then
+  if line:find("|", 1, true) then
     return "<Tab>"
+  end
+
+  local parsed = parse_list_line(line)
+  if not parsed then
+    return "<Tab>"
+  end
+
+  if parsed.kind == "ordered" then
+    vim.schedule(function()
+      renumber_ordered_line(bufnr, row)
+    end)
   end
 
   return "<Esc>>>A"
@@ -319,8 +390,19 @@ function M.expr_shift_tab()
   end
 
   local line = vim.api.nvim_get_current_line()
-  if line:find("|", 1, true) or not parse_list_line(line) then
+  if line:find("|", 1, true) then
     return "<S-Tab>"
+  end
+
+  local parsed = parse_list_line(line)
+  if not parsed then
+    return "<S-Tab>"
+  end
+
+  if parsed.kind == "ordered" then
+    vim.schedule(function()
+      renumber_ordered_line(bufnr, row)
+    end)
   end
 
   return "<Esc><<A"
