@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use pulldown_cmark::{html, CowStr, Event, Options, Parser, Tag};
+use pulldown_cmark::{html, CowStr, Event, Options, Parser, Tag, TagEnd};
 
 const LOCAL_FILE_ROUTE_PREFIX: &str = "/__md_tool/file/";
 
@@ -14,9 +15,74 @@ pub fn render(markdown: &str, base_dir: Option<&Path>) -> String {
     options.insert(Options::ENABLE_MATH);
 
     let parser = Parser::new_ext(markdown, options).map(|event| rewrite_event(event, base_dir));
+    let mut events: Vec<Event<'_>> = parser.collect();
+    add_heading_ids(&mut events);
+
     let mut html_output = String::with_capacity(markdown.len().saturating_add(markdown.len() / 2));
-    html::push_html(&mut html_output, parser);
+    html::push_html(&mut html_output, events.into_iter());
     html_output
+}
+
+/// Build an anchor slug matching the plugin's TOC generator (`lua/md-tool/toc.lua`):
+/// lowercase, drop everything that is not ASCII alphanumeric / whitespace / hyphen,
+/// then turn whitespace into hyphens. Keeping this in sync ensures `:MdTool toc`
+/// links resolve against the headings rendered in the preview.
+fn slugify(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if ch.is_ascii_whitespace() {
+            out.push('-');
+        } else if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        } else if ch == '-' {
+            out.push('-');
+        }
+        // any other character (punctuation, non-ASCII, ...) is dropped
+    }
+    out
+}
+
+/// Assign `id` attributes to headings so in-document anchor links (e.g. a table
+/// of contents) can jump to them. Duplicate slugs get `-1`, `-2`, ... suffixes,
+/// matching both GitHub and the plugin's own TOC numbering.
+fn add_heading_ids(events: &mut [Event<'_>]) {
+    let mut seen: HashMap<String, u32> = HashMap::new();
+
+    for i in 0..events.len() {
+        let needs_id = matches!(
+            &events[i],
+            Event::Start(Tag::Heading { id, .. }) if id.is_none()
+        );
+        if !needs_id {
+            continue;
+        }
+
+        let mut text = String::new();
+        for event in &events[i + 1..] {
+            match event {
+                Event::End(TagEnd::Heading(_)) => break,
+                Event::Text(t) | Event::Code(t) => text.push_str(t),
+                _ => {}
+            }
+        }
+
+        let base = slugify(&text);
+        if base.is_empty() {
+            continue;
+        }
+
+        let count = seen.entry(base.clone()).or_insert(0);
+        let anchor = if *count > 0 {
+            format!("{base}-{count}")
+        } else {
+            base.clone()
+        };
+        *count += 1;
+
+        if let Event::Start(Tag::Heading { id, .. }) = &mut events[i] {
+            *id = Some(CowStr::from(anchor));
+        }
+    }
 }
 
 fn rewrite_event<'a>(event: Event<'a>, base_dir: Option<&Path>) -> Event<'a> {
@@ -189,6 +255,23 @@ mod tests {
             html.contains("src=\"https://example.com/test.png\""),
             "{html}"
         );
+    }
+
+    #[test]
+    fn adds_heading_ids_matching_toc_slugs() {
+        let html = render("## 1. FPLIER: Federated Pathway-Level Information Extractor", None);
+        assert!(
+            html.contains(r#"<h2 id="1-fplier-federated-pathway-level-information-extractor">"#),
+            "{html}"
+        );
+    }
+
+    #[test]
+    fn deduplicates_heading_ids() {
+        let html = render("# Intro\n\n# Intro\n\n# Intro", None);
+        assert!(html.contains(r#"<h1 id="intro">"#), "{html}");
+        assert!(html.contains(r#"<h1 id="intro-1">"#), "{html}");
+        assert!(html.contains(r#"<h1 id="intro-2">"#), "{html}");
     }
 
     #[test]
