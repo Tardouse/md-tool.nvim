@@ -4,9 +4,19 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>md-tool preview</title>
+  <script>
+    // Apply the saved theme before first paint to avoid a flash of the wrong theme.
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem("md-tool-theme"); } catch (e) {}
+      var theme = (saved === "light" || saved === "dark" || saved === "system") ? saved : "system";
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
   <style>
+    /* Light theme (default) */
     :root {
-      color-scheme: light dark;
+      color-scheme: light;
       --bg: #f5f1e8;
       --panel: rgba(255, 255, 255, 0.72);
       --fg: #1f1a14;
@@ -17,8 +27,23 @@
       --shadow: 0 24px 70px rgba(46, 29, 10, 0.12);
     }
 
+    /* Dark theme palette, shared by "follow system" and the manual dark override */
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #151311;
+      --panel: rgba(33, 28, 23, 0.88);
+      --fg: #eee5d6;
+      --muted: #b8ab99;
+      --line: rgba(255, 240, 214, 0.12);
+      --accent: #f0a36b;
+      --code: rgba(255, 240, 214, 0.08);
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+    }
+
+    /* System mode (no explicit choice): follow the OS preference */
     @media (prefers-color-scheme: dark) {
-      :root {
+      :root[data-theme="system"] {
+        color-scheme: dark;
         --bg: #151311;
         --panel: rgba(33, 28, 23, 0.88);
         --fg: #eee5d6;
@@ -98,6 +123,36 @@
 
     .status[data-state="connecting"] .status-dot {
       background: #d29a26;
+    }
+
+    .toolbar-right {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--code);
+      color: var(--muted);
+      cursor: pointer;
+      font: 600 0.8rem/1 "IBM Plex Sans", "Segoe UI", sans-serif;
+      transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    .theme-toggle:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .theme-toggle .theme-icon {
+      font-size: 1rem;
+      line-height: 1;
     }
 
     .preview {
@@ -205,9 +260,15 @@
   <div class="shell">
     <div class="toolbar">
       <div class="title">md-tool preview</div>
-      <div id="status" class="status" data-state="connecting">
-        <span class="status-dot"></span>
-        <span id="status-text">Connecting</span>
+      <div class="toolbar-right">
+        <button id="theme-toggle" class="theme-toggle" type="button" title="Switch theme">
+          <span id="theme-icon" class="theme-icon">🌗</span>
+          <span id="theme-label">System</span>
+        </button>
+        <div id="status" class="status" data-state="connecting">
+          <span class="status-dot"></span>
+          <span id="status-text">Connecting</span>
+        </div>
       </div>
     </div>
     <main id="preview" class="preview">
@@ -370,6 +431,40 @@
         socket.close();
       });
     }
+
+    const THEME_ORDER = ["system", "light", "dark"];
+    const THEME_META = {
+      system: { icon: "🌗", label: "System" },
+      light: { icon: "☀️", label: "Light" },
+      dark: { icon: "🌙", label: "Dark" },
+    };
+    const themeToggle = document.getElementById("theme-toggle");
+    const themeIcon = document.getElementById("theme-icon");
+    const themeLabel = document.getElementById("theme-label");
+
+    function currentTheme() {
+      const value = document.documentElement.dataset.theme;
+      return THEME_ORDER.includes(value) ? value : "system";
+    }
+
+    function applyTheme(theme) {
+      document.documentElement.dataset.theme = theme;
+      try {
+        localStorage.setItem("md-tool-theme", theme);
+      } catch (_) {}
+      const meta = THEME_META[theme];
+      themeIcon.textContent = meta.icon;
+      themeLabel.textContent = meta.label;
+      themeToggle.title = `Theme: ${meta.label} (click to switch)`;
+    }
+
+    function cycleTheme() {
+      const next = THEME_ORDER[(THEME_ORDER.indexOf(currentTheme()) + 1) % THEME_ORDER.length];
+      applyTheme(next);
+    }
+
+    applyTheme(currentTheme());
+    themeToggle.addEventListener("click", cycleTheme);
 
     connect();
   </script>
