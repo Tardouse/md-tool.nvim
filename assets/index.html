@@ -196,6 +196,10 @@
       100% { box-shadow: 0 0 0 0 rgba(44, 154, 99, 0); }
     }
   </style>
+
+  <!-- md-tool-katex-injected -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 </head>
 <body>
   <div class="shell">
@@ -369,5 +373,45 @@
 
     connect();
   </script>
+
+<!-- md-tool-katex-injected-script -->
+<script>
+(function () {
+  function renderMathIn(root) {
+    if (!window.katex) return;
+    var nodes = root.querySelectorAll('span.math:not([data-md-tool-math])');
+    Array.prototype.forEach.call(nodes, function (el) {
+      el.setAttribute('data-md-tool-math', '1');
+      try {
+        window.katex.render(el.textContent, el, {
+          displayMode: el.classList.contains('math-display'),
+          throwOnError: false,
+        });
+      } catch (e) {}
+    });
+  }
+  function start() {
+    renderMathIn(document.body);
+    var observer = new MutationObserver(function () {
+      observer.disconnect();
+      renderMathIn(document.body);
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+  function whenKatexReady(cb) {
+    if (window.katex) { cb(); return; }
+    var tries = 0;
+    var t = setInterval(function () {
+      if (window.katex || tries++ > 200) { clearInterval(t); cb(); }
+    }, 50);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { whenKatexReady(start); });
+  } else {
+    whenKatexReady(start);
+  }
+})();
+</script>
 </body>
 </html>

@@ -11,6 +11,7 @@ pub fn render(markdown: &str, base_dir: Option<&Path>) -> String {
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_FOOTNOTES);
     options.insert(Options::ENABLE_SMART_PUNCTUATION);
+    options.insert(Options::ENABLE_MATH);
 
     let parser = Parser::new_ext(markdown, options).map(|event| rewrite_event(event, base_dir));
     let mut html_output = String::with_capacity(markdown.len().saturating_add(markdown.len() / 2));
