@@ -9,6 +9,7 @@
 - `MDTrender*`：在 Neovim 内对标题、列表、引用、Callout、表格、代码块、分割线做增强渲染，不改动原始文本
 - `MDTpriview*`：生成 HTML 预览，支持自动打开、手动浏览器命令、仅回显 URL
 - `MDTupload`：在图片链接处调用 PicGo 上传本地或在线图片，并用图床 URL 回写 Markdown
+- `MDTuploadClipboard [替代文本]`：上传剪贴板中的截图或图片，并在光标后插入 Markdown 图片链接
 - `MDTtable*`：打开 buffer-local 表格模式，编辑时自动识别并格式化当前表格；插入态下 `|` 会补下一个单元格，`<CR>` 会生成分隔线或下一行，也支持手动格式化
 - `MDTtoc*`：根据标题生成或更新 TOC，使用固定标记块
 - `MDTlist*`：更保守的 Markdown 列表续写，替代侵入性更强的行为
@@ -145,6 +146,17 @@ require("md-tool").setup({
 - 本地图片会通过 PicGo 上传，并把 Markdown 里的目标地址替换成返回的图床 URL。
 - 在线图片会先下载到临时文件，再走同一条 PicGo 上传流程。
 - 插件只会替换图片链接里的目标地址，`alt` 文本和可选 title 会保留。
+
+复制图片或截图后执行 `:MDTuploadClipboard`，插件会读取剪贴板图片、通过同一套 PicGo 流程上传，并在光标后插入 `![image](<图床地址>)`。命令可以附带替代文本，例如 `:MDTuploadClipboard 架构图`。
+
+插件会自动选择当前系统可用的剪贴板读取工具：
+
+- Wayland：`wl-paste`（由 `wl-clipboard` 提供）
+- X11：`xclip`
+- macOS：优先使用 `pngpaste`，未安装时回退到系统自带的 `osascript`
+- Windows：PowerShell
+
+上传结束后会删除生成的临时图片。上传文件名仍遵循 `upload.filename`；没有自定义规则时使用唯一的 `clipboard-<日期>-<时间>-<后缀>.<扩展名>` 文件名。
 
 示例配置：
 

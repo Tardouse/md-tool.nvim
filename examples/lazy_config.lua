@@ -308,9 +308,9 @@ return {
 			},
 
 			upload = {
-				-- [CN] 临时文件目录；在线图片下载和需要重命名的本地图片会先放到这里再交给 PicGo。
+				-- [CN] 临时文件目录；在线图片、剪贴板图片和需要重命名的本地图片会先放到这里再交给 PicGo。
 				-- [CN] 可选值: 空字符串表示自动使用 `stdpath("cache") .. "/md-tool/upload"`；或任意可写目录路径。
-				-- [EN] Temporary directory for remote downloads and staged local files before PicGo uploads them.
+				-- [EN] Temporary directory for remote downloads, clipboard images, and staged local files before PicGo uploads them.
 				-- [EN] Choices: empty string for `stdpath("cache") .. "/md-tool/upload"`; or any writable directory path.
 				temp_dir = "",
 

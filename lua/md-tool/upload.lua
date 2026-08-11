@@ -213,6 +213,14 @@ local function command_error(prefix, result)
   return ("%s: %s"):format(prefix, detail)
 end
 
+local function binary_command_error(prefix, result)
+  local detail = trim(strip_ansi(result.stderr or ""))
+  if detail == "" then
+    detail = "exit code " .. tostring(result.code or -1)
+  end
+  return ("%s: %s"):format(prefix, detail)
+end
+
 local function extract_uploaded_url(stdout, stderr)
   local combined = strip_ansi((stdout or "") .. "\n" .. (stderr or ""))
   local last_url = nil
@@ -252,6 +260,59 @@ end
 
 local function unique_suffix()
   return ("%d-%x"):format(os.time(), uv.hrtime())
+end
+
+local clipboard_mime_types = {
+  { mime = "image/png", ext = ".png" },
+  { mime = "image/jpeg", ext = ".jpg" },
+  { mime = "image/jpg", ext = ".jpg" },
+  { mime = "image/webp", ext = ".webp" },
+  { mime = "image/gif", ext = ".gif" },
+  { mime = "image/bmp", ext = ".bmp" },
+  { mime = "image/tiff", ext = ".tiff" },
+}
+
+local function select_clipboard_image_type(output)
+  local available = {}
+  for value in (output or ""):gmatch("[^%s]+") do
+    available[value:lower():gsub(";.*$", "")] = true
+  end
+
+  for _, image_type in ipairs(clipboard_mime_types) do
+    if available[image_type.mime] then
+      return image_type
+    end
+  end
+
+  return nil
+end
+
+local function write_binary_file(path, data)
+  if type(data) ~= "string" or data == "" then
+    return nil, "The clipboard image was empty."
+  end
+
+  local fd, open_err = uv.fs_open(path, "w", 384)
+  if not fd then
+    return nil, "Failed to create the clipboard image: " .. tostring(open_err)
+  end
+
+  local offset = 0
+  while offset < #data do
+    local written, write_err = uv.fs_write(fd, data:sub(offset + 1), offset)
+    if not written then
+      uv.fs_close(fd)
+      return nil, "Failed to save the clipboard image: " .. tostring(write_err)
+    end
+    offset = offset + written
+  end
+
+  local close_ok, close_err = uv.fs_close(fd)
+  if not close_ok then
+    return nil, "Failed to close the clipboard image: " .. tostring(close_err)
+  end
+
+  return true
 end
 
 local function resolve_temp_root()
@@ -311,6 +372,217 @@ local function cleanup_operation(operation)
       pcall(uv.fs_rmdir, dir)
     end
   end
+end
+
+local function allocate_clipboard_path(operation, ext)
+  local dir, dir_err = ensure_operation_dir(operation)
+  if not dir then
+    return nil, dir_err
+  end
+
+  local filename = ("clipboard-%s-%06d%s"):format(os.date("%Y%m%d-%H%M%S"), uv.hrtime() % 1000000, ext)
+  local path = vim.fs.joinpath(dir, filename)
+  table.insert(operation.files, path)
+  return path
+end
+
+local function clipboard_source(path, ext)
+  local stat = uv.fs_stat(path)
+  if not stat or not stat.size or stat.size == 0 then
+    return nil, "The clipboard did not contain a readable image."
+  end
+
+  return {
+    basename = vim.fs.basename(path),
+    ext = ext,
+    kind = "local",
+    original = "clipboard",
+    path = path,
+  }
+end
+
+local function capture_stdout_image(list_command, read_command, operation, provider_name, callback)
+  vim.system(list_command, { text = true, timeout = 10000 }, function(list_result)
+    vim.schedule(function()
+      if list_result.code ~= 0 then
+        callback(command_error(("Failed to inspect the clipboard with %s"):format(provider_name), list_result))
+        return
+      end
+
+      local image_type = select_clipboard_image_type(list_result.stdout)
+      if not image_type then
+        callback("The clipboard does not contain a supported image type.")
+        return
+      end
+
+      local output_path, path_err = allocate_clipboard_path(operation, image_type.ext)
+      if not output_path then
+        callback(path_err)
+        return
+      end
+
+      vim.system(read_command(image_type.mime), { timeout = 10000 }, function(read_result)
+        vim.schedule(function()
+          if read_result.code ~= 0 then
+            callback(binary_command_error(("Failed to read the clipboard image with %s"):format(provider_name), read_result))
+            return
+          end
+
+          local write_ok, write_err = write_binary_file(output_path, read_result.stdout)
+          if not write_ok then
+            callback(write_err)
+            return
+          end
+
+          local source, source_err = clipboard_source(output_path, image_type.ext)
+          callback(source_err, source)
+        end)
+      end)
+    end)
+  end)
+end
+
+local function capture_wayland_image(operation, callback)
+  capture_stdout_image(
+    { "wl-paste", "--list-types" },
+    function(mime)
+      return { "wl-paste", "--type", mime }
+    end,
+    operation,
+    "wl-paste",
+    callback
+  )
+end
+
+local function capture_x11_image(operation, callback)
+  capture_stdout_image(
+    { "xclip", "-selection", "clipboard", "-t", "TARGETS", "-o" },
+    function(mime)
+      return { "xclip", "-selection", "clipboard", "-t", mime, "-o" }
+    end,
+    operation,
+    "xclip",
+    callback
+  )
+end
+
+local function run_file_clipboard_command(command, output_path, provider_name, callback)
+  vim.system(command, { text = true, timeout = 10000 }, function(result)
+    vim.schedule(function()
+      if result.code ~= 0 then
+        callback(command_error(("Failed to read the clipboard image with %s"):format(provider_name), result))
+        return
+      end
+
+      local source, source_err = clipboard_source(output_path, ".png")
+      callback(source_err, source)
+    end)
+  end)
+end
+
+local function capture_macos_image(operation, callback)
+  local output_path, path_err = allocate_clipboard_path(operation, ".png")
+  if not output_path then
+    callback(path_err)
+    return
+  end
+
+  if utils.command_exists("pngpaste") then
+    run_file_clipboard_command({ "pngpaste", output_path }, output_path, "pngpaste", callback)
+    return
+  end
+
+  local script = [[
+on run argv
+  set outputPath to item 1 of argv
+  set imageData to the clipboard as «class PNGf»
+  set fileRef to open for access (POSIX file outputPath) with write permission
+  try
+    set eof fileRef to 0
+    write imageData to fileRef
+    close access fileRef
+  on error errorMessage number errorNumber
+    try
+      close access fileRef
+    end try
+    error errorMessage number errorNumber
+  end try
+end run
+]]
+  run_file_clipboard_command({ "osascript", "-e", script, "--", output_path }, output_path, "osascript", callback)
+end
+
+local function capture_windows_image(operation, callback)
+  local powershell
+  for _, executable in ipairs({ "pwsh", "powershell" }) do
+    if utils.command_exists(executable) then
+      powershell = executable
+      break
+    end
+  end
+
+  if not powershell then
+    callback("PowerShell is required to read clipboard images on Windows.")
+    return
+  end
+
+  local output_path, path_err = allocate_clipboard_path(operation, ".png")
+  if not output_path then
+    callback(path_err)
+    return
+  end
+
+  local script = [[
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$image = [System.Windows.Forms.Clipboard]::GetImage()
+if ($null -eq $image) {
+  [Console]::Error.WriteLine("The clipboard does not contain an image.")
+  exit 2
+}
+try {
+  $image.Save($args[0], [System.Drawing.Imaging.ImageFormat]::Png)
+} finally {
+  $image.Dispose()
+}
+]]
+  run_file_clipboard_command(
+    { powershell, "-NoProfile", "-STA", "-Command", script, output_path },
+    output_path,
+    powershell,
+    callback
+  )
+end
+
+local function capture_clipboard_image(operation, callback)
+  local os_name = utils.detect_os()
+  if os_name == "macos" then
+    capture_macos_image(operation, callback)
+    return
+  end
+  if os_name == "windows" then
+    capture_windows_image(operation, callback)
+    return
+  end
+
+  if vim.env.WAYLAND_DISPLAY and utils.command_exists("wl-paste") then
+    capture_wayland_image(operation, callback)
+    return
+  end
+  if vim.env.DISPLAY and utils.command_exists("xclip") then
+    capture_x11_image(operation, callback)
+    return
+  end
+  if utils.command_exists("wl-paste") then
+    capture_wayland_image(operation, callback)
+    return
+  end
+  if utils.command_exists("xclip") then
+    capture_x11_image(operation, callback)
+    return
+  end
+
+  callback("No clipboard image reader was found. Install wl-clipboard (Wayland) or xclip (X11).")
 end
 
 local function render_filename(template, context)
@@ -665,6 +937,23 @@ local function replace_destination(bufnr, mark_id, url)
   return nil
 end
 
+local function upload_source(source, operation, callback)
+  stage_source(source, operation, function(stage_err, upload_path)
+    if stage_err then
+      callback(stage_err)
+      return
+    end
+
+    local config_path, config_err = resolve_picgo_config_path(operation)
+    if config_err then
+      callback(config_err)
+      return
+    end
+
+    run_picgo(upload_path, config_path, callback)
+  end)
+end
+
 local function begin_upload(bufnr, image)
   local source, source_err = resolve_source(image.destination, bufnr)
   if not source then
@@ -686,23 +975,86 @@ local function begin_upload(bufnr, image)
 
   utils.notify("Uploading image with PicGo...")
 
-  stage_source(source, operation, function(stage_err, upload_path)
-    if stage_err then
+  upload_source(source, operation, function(upload_err, url)
+    if upload_err then
       pcall(vim.api.nvim_buf_del_extmark, bufnr, namespace, mark_id)
       cleanup_operation(operation)
-      utils.notify(stage_err, vim.log.levels.ERROR)
+      utils.notify(upload_err, vim.log.levels.ERROR)
       return
     end
 
-    local config_path, config_err = resolve_picgo_config_path(operation)
-    if config_err then
-      pcall(vim.api.nvim_buf_del_extmark, bufnr, namespace, mark_id)
-      cleanup_operation(operation)
-      utils.notify(config_err, vim.log.levels.ERROR)
+    local replace_err = replace_destination(bufnr, mark_id, url)
+    cleanup_operation(operation)
+    if replace_err then
+      utils.notify(replace_err, vim.log.levels.ERROR)
       return
     end
 
-    run_picgo(upload_path, config_path, function(upload_err, url)
+    utils.notify("Image uploaded: " .. url)
+  end)
+end
+
+local function create_cursor_mark(bufnr)
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local row = cursor[1] - 1
+  local line = vim.api.nvim_buf_get_lines(bufnr, row, row + 1, false)[1] or ""
+  local col = math.min(cursor[2], #line)
+
+  if line ~= "" and col < #line then
+    local current_char = vim.fn.strcharpart(line:sub(col + 1), 0, 1)
+    col = math.min(col + #current_char, #line)
+  end
+
+  return vim.api.nvim_buf_set_extmark(bufnr, namespace, row, col, {
+    right_gravity = false,
+  })
+end
+
+local function escape_image_alt(alt)
+  return (alt:gsub("\\", "\\\\"):gsub("]", "\\]"))
+end
+
+local function insert_uploaded_image(bufnr, mark_id, url, alt)
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return "The buffer was closed before the upload finished."
+  end
+
+  local mark = vim.api.nvim_buf_get_extmark_by_id(bufnr, namespace, mark_id, {})
+  if not mark or #mark == 0 then
+    return "The clipboard insertion point changed before the upload finished."
+  end
+
+  local row = mark[1]
+  local col = mark[2]
+  local markdown = ("![%s](<%s>)"):format(escape_image_alt(alt), url)
+  vim.api.nvim_buf_set_text(bufnr, row, col, row, col, { markdown })
+  vim.api.nvim_buf_del_extmark(bufnr, namespace, mark_id)
+
+  if vim.api.nvim_get_current_buf() == bufnr then
+    pcall(vim.api.nvim_win_set_cursor, 0, { row + 1, math.max(col, col + #markdown - 1) })
+  end
+
+  return nil
+end
+
+local function begin_clipboard_upload(bufnr, alt)
+  local mark_id = create_cursor_mark(bufnr)
+  local operation = {
+    dirs = {},
+    files = {},
+  }
+
+  utils.notify("Reading image from the clipboard...")
+  capture_clipboard_image(operation, function(capture_err, source)
+    if capture_err then
+      pcall(vim.api.nvim_buf_del_extmark, bufnr, namespace, mark_id)
+      cleanup_operation(operation)
+      utils.notify(capture_err, vim.log.levels.ERROR)
+      return
+    end
+
+    utils.notify("Uploading clipboard image with PicGo...")
+    upload_source(source, operation, function(upload_err, url)
       if upload_err then
         pcall(vim.api.nvim_buf_del_extmark, bufnr, namespace, mark_id)
         cleanup_operation(operation)
@@ -710,14 +1062,14 @@ local function begin_upload(bufnr, image)
         return
       end
 
-      local replace_err = replace_destination(bufnr, mark_id, url)
+      local insert_err = insert_uploaded_image(bufnr, mark_id, url, alt)
       cleanup_operation(operation)
-      if replace_err then
-        utils.notify(replace_err, vim.log.levels.ERROR)
+      if insert_err then
+        utils.notify(insert_err, vim.log.levels.ERROR)
         return
       end
 
-      utils.notify("Image uploaded: " .. url)
+      utils.notify("Clipboard image uploaded: " .. url)
     end)
   end)
 end
@@ -736,6 +1088,21 @@ function M.upload_cursor_image()
   end
 
   begin_upload(bufnr, image)
+end
+
+function M.upload_clipboard_image(alt)
+  local bufnr = vim.api.nvim_get_current_buf()
+  if not utils.is_markdown_buffer(bufnr) then
+    utils.notify("MDTuploadClipboard only works in Markdown buffers.", vim.log.levels.WARN)
+    return
+  end
+
+  alt = trim(alt)
+  if alt == "" then
+    alt = "image"
+  end
+
+  begin_clipboard_upload(bufnr, alt)
 end
 
 return M

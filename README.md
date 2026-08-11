@@ -6,7 +6,7 @@ Current implementation highlights:
 
 - Treesitter-driven in-editor render with decorated headings, lists, quotes, callouts, tables, code fences, and thematic breaks
 - Browser preview with auto browser detection, manual browser commands, and echo-only mode
-- PicGo-powered image upload for local files and existing remote image links
+- PicGo-powered image upload for local files, remote image links, and clipboard screenshots
 - Current-table formatting with optional auto-align and format-on-save
 - TOC generation and update using fenced markers
 - Conservative smart `<CR>` continuation for Markdown lists
@@ -74,6 +74,7 @@ By default, table mode is off on newly opened buffers. If you want it enabled au
 ### Upload
 
 - `MDTupload`
+- `MDTuploadClipboard [alt text]`
 
 ### List
 
@@ -204,6 +205,17 @@ Run `:MDTupload` with the cursor anywhere inside a Markdown image like `![alt](.
 - Local image destinations are uploaded through PicGo and then replaced with the returned image-bed URL.
 - Remote image destinations are first downloaded into a temporary file and then uploaded through the same PicGo flow.
 - The destination part of the Markdown image is replaced in place, so titles and alt text stay untouched.
+
+Run `:MDTuploadClipboard` after copying or taking a screenshot. The plugin reads the clipboard image, uploads it through the same PicGo pipeline, and inserts `![image](<uploaded-url>)` after the cursor. An optional argument changes the alt text, for example `:MDTuploadClipboard architecture diagram`.
+
+Clipboard readers are selected automatically:
+
+- Wayland: `wl-paste` from `wl-clipboard`
+- X11: `xclip`
+- macOS: `pngpaste` when installed, otherwise the built-in `osascript`
+- Windows: PowerShell
+
+The generated temporary image is removed after the upload finishes. Its upload name still follows `upload.filename`; without a custom rule, a unique `clipboard-<date>-<time>-<suffix>.<ext>` name is used.
 
 Example configuration:
 
