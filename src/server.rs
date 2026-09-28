@@ -10,7 +10,7 @@ use std::{
 use anyhow::Result;
 use axum::{
     body::Body,
-    extract::{ws::WebSocketUpgrade, Json, Path as AxumPath, State},
+    extract::{ws::WebSocketUpgrade, DefaultBodyLimit, Json, Path as AxumPath, State},
     http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
@@ -28,6 +28,7 @@ use tracing::{debug, info};
 use crate::{markdown, websocket};
 
 const INDEX_HTML: &str = include_str!("../assets/index.html");
+const MAX_UPDATE_BODY_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -254,7 +255,10 @@ fn app(state: SharedState) -> Router {
         .route("/__md_tool/file/{encoded_path}", get(local_file))
         .route("/close", post(close_preview))
         .route("/scroll", post(scroll))
-        .route("/update", post(update))
+        .route(
+            "/update",
+            post(update).layer(DefaultBodyLimit::max(MAX_UPDATE_BODY_BYTES)),
+        )
         .route("/ws", get(websocket_upgrade))
         .with_state(state)
 }
@@ -445,4 +449,39 @@ async fn shutdown_signal() {
     }
 
     info!("shutdown signal received");
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::{
+        body::Body,
+        http::{header, Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    use super::{app, AppState};
+
+    #[tokio::test]
+    async fn accepts_markdown_updates_larger_than_axums_default_limit() {
+        let markdown = "a".repeat(3 * 1024 * 1024);
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "markdown": markdown,
+            "base_dir": null,
+        }))
+        .expect("update request should serialize");
+
+        let request = Request::builder()
+            .method("POST")
+            .uri("/update")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(payload))
+            .expect("update request should build");
+
+        let response = app(std::sync::Arc::new(AppState::new()))
+            .oneshot(request)
+            .await
+            .expect("update request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+    }
 }
