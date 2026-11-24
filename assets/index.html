@@ -9,12 +9,12 @@
     (function () {
       var saved = null;
       try { saved = localStorage.getItem("md-tool-theme"); } catch (e) {}
-      var theme = (saved === "light" || saved === "dark" || saved === "system") ? saved : "system";
+      var theme = (saved === "light" || saved === "white" || saved === "dark" || saved === "system") ? saved : "system";
       document.documentElement.dataset.theme = theme;
     })();
   </script>
   <style>
-    /* Light theme (default) */
+    /* Warm light theme (also used by system mode on a light OS theme) */
     :root {
       color-scheme: light;
       --bg: #f5f1e8;
@@ -25,6 +25,28 @@
       --accent: #9b4d18;
       --code: rgba(92, 67, 39, 0.08);
       --shadow: 0 24px 70px rgba(46, 29, 10, 0.12);
+      --page-background:
+        radial-gradient(circle at top left, rgba(155, 77, 24, 0.18), transparent 30%),
+        radial-gradient(circle at top right, rgba(240, 163, 107, 0.1), transparent 28%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.25), transparent 30%),
+        var(--bg);
+      --toolbar-background: linear-gradient(180deg, rgba(155, 77, 24, 0.08), transparent);
+      --table-header-background: rgba(155, 77, 24, 0.08);
+    }
+
+    :root[data-theme="white"] {
+      color-scheme: light;
+      --bg: #ffffff;
+      --panel: #ffffff;
+      --fg: #24292f;
+      --muted: #57606a;
+      --line: #d0d7de;
+      --accent: #0969da;
+      --code: #f6f8fa;
+      --shadow: 0 24px 70px rgba(31, 35, 40, 0.08);
+      --page-background: var(--bg);
+      --toolbar-background: #f6f8fa;
+      --table-header-background: #f6f8fa;
     }
 
     /* Dark theme palette, shared by "follow system" and the manual dark override */
@@ -63,11 +85,7 @@
       margin: 0;
       min-height: 100vh;
       color: var(--fg);
-      background:
-        radial-gradient(circle at top left, rgba(155, 77, 24, 0.18), transparent 30%),
-        radial-gradient(circle at top right, rgba(240, 163, 107, 0.1), transparent 28%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.25), transparent 30%),
-        var(--bg);
+      background: var(--page-background);
       font: 16px/1.7 "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
     }
 
@@ -89,7 +107,7 @@
       gap: 16px;
       padding: 16px 20px;
       border-bottom: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(155, 77, 24, 0.08), transparent);
+      background: var(--toolbar-background);
     }
 
     .title {
@@ -148,6 +166,11 @@
     .theme-toggle:hover {
       color: var(--accent);
       border-color: var(--accent);
+    }
+
+    .theme-toggle:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
     }
 
     .theme-toggle .theme-icon {
@@ -224,7 +247,7 @@
     }
 
     th {
-      background: rgba(155, 77, 24, 0.08);
+      background: var(--table-header-background);
     }
 
     hr {
@@ -262,7 +285,7 @@
       <div class="title">md-tool preview</div>
       <div class="toolbar-right">
         <button id="theme-toggle" class="theme-toggle" type="button" title="Switch theme">
-          <span id="theme-icon" class="theme-icon">🌗</span>
+          <span id="theme-icon" class="theme-icon" aria-hidden="true">🌗</span>
           <span id="theme-label">System</span>
         </button>
         <div id="status" class="status" data-state="connecting">
@@ -432,10 +455,11 @@
       });
     }
 
-    const THEME_ORDER = ["system", "light", "dark"];
+    const THEME_ORDER = ["system", "light", "white", "dark"];
     const THEME_META = {
       system: { icon: "🌗", label: "System" },
-      light: { icon: "☀️", label: "Light" },
+      light: { icon: "☀️", label: "Warm" },
+      white: { icon: "⬜", label: "White" },
       dark: { icon: "🌙", label: "Dark" },
     };
     const themeToggle = document.getElementById("theme-toggle");
@@ -455,7 +479,10 @@
       const meta = THEME_META[theme];
       themeIcon.textContent = meta.icon;
       themeLabel.textContent = meta.label;
-      themeToggle.title = `Theme: ${meta.label} (click to switch)`;
+      const next = THEME_ORDER[(THEME_ORDER.indexOf(theme) + 1) % THEME_ORDER.length];
+      const description = `Theme: ${meta.label} (switch to ${THEME_META[next].label})`;
+      themeToggle.title = description;
+      themeToggle.setAttribute("aria-label", description);
     }
 
     function cycleTheme() {

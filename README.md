@@ -244,6 +244,14 @@ The preview module now runs a local Rust service:
 
 The server keeps only the latest document in memory, skips re-rendering when content is unchanged, and supports multiple browser clients concurrently. Preview updates are debounced on the Neovim side to avoid flooding the local server while typing.
 
+### Preview Themes
+
+Click the theme button in the preview toolbar to cycle through **System → Warm → White → Dark**. White uses a pure white background, neutral gray code blocks and tables, and blue headings and links. System follows the OS preference, using Warm in light mode and Dark in dark mode.
+
+The browser remembers your choice across refreshes and preview sessions at the same address. Existing saved Light preferences continue to use Warm. Theme changes take effect immediately without restarting Neovim.
+
+After updating the preview HTML locally, run `cargo build --release` and restart Neovim to load the rebuilt preview server, which embeds the page.
+
 ### Preview Browser Modes
 
 `md-tool.nvim` still supports three browser-open modes:
